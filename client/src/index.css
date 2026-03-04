@@ -1,0 +1,74 @@
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  --bg-primary: #0a0a0a;
+  --bg-secondary: #141414;
+  --bg-card: #1a1a1a;
+  --accent: #ff3b3b;
+  --accent-dim: #cc2222;
+  --text-primary: #f0f0f0;
+  --text-secondary: #888;
+  --text-muted: #555;
+  --border: #2a2a2a;
+  --success: #22c55e;
+  --warning: #eab308;
+  --danger: #ef4444;
+}
+
+body {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  line-height: 1.5;
+  min-height: 100vh;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  border-radius: 6px;
+  font-size: 1rem;
+  font-weight: 600;
+  padding: 0.6rem 1.2rem;
+  transition: opacity 0.15s, transform 0.1s;
+}
+
+button:hover {
+  opacity: 0.88;
+}
+
+button:active {
+  transform: scale(0.97);
+}
+
+input, textarea {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  padding: 0.65rem 1rem;
+  width: 100%;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input:focus, textarea:focus {
+  border-color: var(--accent);
+}
+
+.card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1.5rem;
+}
