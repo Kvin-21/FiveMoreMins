@@ -16,8 +16,6 @@ export default function Login() {
   const [searchParams] = useSearchParams();
 
   // Handle magic link verification — /login/verify?token=xxx
-  // Intentionally runs once on mount: searchParams, login, and navigate are all
-  // stable references that won't change between renders.
   useEffect(() => {
     const token = searchParams.get('token');
     if (!token) return;
@@ -32,8 +30,7 @@ export default function Login() {
         setError(err.message || 'That link is invalid or expired. Try again.');
         setVerifying(false);
       });
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [searchParams, login, navigate]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

@@ -6,3 +6,8 @@ server/dist/
 *.env
 .env
 .env.local
+uploads/
+*.db
+*.sqlite
+server/data/
+.DS_Store

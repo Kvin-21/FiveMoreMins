@@ -115,7 +115,7 @@ router.get('/me', requireAuth, generalRateLimit, (req: Request, res: Response) =
  * POST /api/logout
  * Destroy the session and send the user back into the void.
  */
-router.post('/logout', (req: Request, res: Response) => {
+router.post('/logout', generalRateLimit, (req: Request, res: Response) => {
   req.session.destroy((err) => {
     if (err) console.error('[auth] Session destroy error:', err);
     res.json({ message: 'Logged out. See you on the other side.' });

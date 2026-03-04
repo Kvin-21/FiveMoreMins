@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import { upload, saveImage } from '../services/storage';
 import { requireAuth } from '../middleware/auth';
+import { generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -12,6 +13,7 @@ const router = Router();
 router.post(
   '/upload-image',
   requireAuth,
+  generalRateLimit,
   upload.single('image'),
   async (req: Request, res: Response) => {
     try {
