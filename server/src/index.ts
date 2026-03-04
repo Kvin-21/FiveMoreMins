@@ -33,6 +33,8 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
+      // Require HTTPS in production; allow HTTP in dev so local testing works
+      secure: process.env.NODE_ENV === 'production',
       maxAge: config.sessionCookieMaxAge,
     },
   }),

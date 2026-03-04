@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../db/connection';
 import { requireAuth } from '../middleware/auth';
+import { generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -26,7 +27,7 @@ interface StreakRow {
  * POST /api/session/start
  * Create a new 'active' session. Returns the new session id.
  */
-router.post('/start', requireAuth, (req: Request, res: Response) => {
+router.post('/start', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
     const { focusDuration } = req.body as { focusDuration?: number };
@@ -49,7 +50,7 @@ router.post('/start', requireAuth, (req: Request, res: Response) => {
  * POST /api/session/end
  * Mark a session as ended with an outcome. Updates streak if completed.
  */
-router.post('/end', requireAuth, (req: Request, res: Response) => {
+router.post('/end', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
     const { sessionId, outcome, awaySeconds } = req.body as {

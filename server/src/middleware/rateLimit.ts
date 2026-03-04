@@ -6,7 +6,6 @@ interface RateLimitEntry {
 }
 
 const WINDOW_MS = 15 * 60 * 1000; // 15 minutes
-const MAX_REQUESTS = 10;
 
 // In-memory store — good enough for a single-process server.
 // Swap for Redis if you ever run multiple instances.
@@ -22,26 +21,39 @@ setInterval(() => {
   }
 }, 5 * 60 * 1000).unref(); // unref so the interval doesn't keep the process alive
 
-export function authRateLimit(req: Request, res: Response, next: NextFunction): void {
-  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+function checkLimit(key: string, max: number, req: Request, res: Response, next: NextFunction): void {
   const now = Date.now();
-
-  const entry = store.get(ip);
+  const entry = store.get(key);
 
   if (!entry || entry.resetAt < now) {
-    // First request in this window (or window expired)
-    store.set(ip, { count: 1, resetAt: now + WINDOW_MS });
+    store.set(key, { count: 1, resetAt: now + WINDOW_MS });
     next();
     return;
   }
 
-  if (entry.count >= MAX_REQUESTS) {
-    res.status(429).json({
-      error: 'Too many requests. Slow down — ironically, this is a focus app.',
-    });
+  if (entry.count >= max) {
+    res.status(429).json({ error: 'Too many requests. Slow down.' });
     return;
   }
 
   entry.count++;
   next();
+}
+
+/**
+ * Strict limiter for auth endpoints: 10 requests per IP per 15 minutes.
+ * Prevents brute-force magic link farming.
+ */
+export function authRateLimit(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  checkLimit(`auth:${ip}`, 10, req, res, next);
+}
+
+/**
+ * General limiter for all other routes: 100 requests per IP per 15 minutes.
+ * A reasonable ceiling for legitimate users while blocking scrapers.
+ */
+export function generalRateLimit(req: Request, res: Response, next: NextFunction): void {
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
+  checkLimit(`general:${ip}`, 100, req, res, next);
 }

@@ -3,6 +3,7 @@ import db from '../db/connection';
 import { generateToken } from '../utils/token';
 import { sendPartnerInvite } from '../services/email';
 import { requireAuth } from '../middleware/auth';
+import { generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -27,7 +28,7 @@ interface UserRow {
  * POST /api/partner/invite
  * Send an opt-in invite to a partner email. Re-sending resets any previous consent.
  */
-router.post('/invite', requireAuth, async (req: Request, res: Response) => {
+router.post('/invite', requireAuth, generalRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
     const { partnerEmail } = req.body as { partnerEmail?: string };
@@ -75,7 +76,7 @@ router.post('/invite', requireAuth, async (req: Request, res: Response) => {
  * The link in the partner invite email lands here.
  * Records consent and returns an HTML confirmation page.
  */
-router.get('/confirm/:token', (req: Request, res: Response) => {
+router.get('/confirm/:token', generalRateLimit, (req: Request, res: Response) => {
   try {
     const { token } = req.params;
 
@@ -151,7 +152,7 @@ router.get('/confirm/:token', (req: Request, res: Response) => {
  * GET /api/partner/status
  * Return the current partner consent record for the logged-in user.
  */
-router.get('/status', requireAuth, (req: Request, res: Response) => {
+router.get('/status', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
 
@@ -186,7 +187,7 @@ router.get('/status', requireAuth, (req: Request, res: Response) => {
  * POST /api/partner/revoke
  * Revoke the active partner consent. They won't receive further emails.
  */
-router.post('/revoke', requireAuth, (req: Request, res: Response) => {
+router.post('/revoke', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
 

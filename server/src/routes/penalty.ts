@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import db from '../db/connection';
 import { triggerPenalty } from '../services/penalty';
 import { requireAuth } from '../middleware/auth';
+import { generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -16,7 +17,7 @@ interface SessionRow {
  * Called when the client detects a focus session failure.
  * Looks up the user's active session and fires the penalty service.
  */
-router.post('/trigger', requireAuth, async (req: Request, res: Response) => {
+router.post('/trigger', requireAuth, generalRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
 

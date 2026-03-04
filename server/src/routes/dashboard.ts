@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import db from '../db/connection';
 import { requireAuth } from '../middleware/auth';
+import { generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -25,7 +26,7 @@ interface CountRow {
  * GET /api/dashboard
  * Single endpoint that gives the frontend everything it needs for the dashboard.
  */
-router.get('/', requireAuth, (req: Request, res: Response) => {
+router.get('/', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
 

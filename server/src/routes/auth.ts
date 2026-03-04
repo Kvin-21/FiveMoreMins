@@ -4,7 +4,7 @@ import { config } from '../utils/config';
 import { generateToken } from '../utils/token';
 import { sendMagicLink } from '../services/email';
 import { requireAuth } from '../middleware/auth';
-import { authRateLimit } from '../middleware/rateLimit';
+import { authRateLimit, generalRateLimit } from '../middleware/rateLimit';
 
 const router = Router();
 
@@ -56,7 +56,7 @@ router.post('/signup', authRateLimit, async (req: Request, res: Response) => {
  * POST /api/login/verify
  * Validate the token from the magic link. Set the session. Return user data.
  */
-router.post('/login/verify', async (req: Request, res: Response) => {
+router.post('/login/verify', authRateLimit, async (req: Request, res: Response) => {
   try {
     const { token } = req.body as { token?: string };
 
@@ -98,7 +98,7 @@ router.post('/login/verify', async (req: Request, res: Response) => {
  * GET /api/me
  * Return the currently authenticated user.
  */
-router.get('/me', requireAuth, (req: Request, res: Response) => {
+router.get('/me', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   const user = db
     .prepare('SELECT id, email, created_at FROM users WHERE id = ?')
     .get(req.session.userId) as UserRow | undefined;
