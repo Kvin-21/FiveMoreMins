@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Your accountability report</title>
+</head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:system-ui,-apple-system,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="background:#0f172a;padding:40px 0;">
+    <tr>
+      <td align="center">
+        <table width="560" cellpadding="0" cellspacing="0" style="background:#1e293b;border-radius:12px;overflow:hidden;">
+          <!-- Header - red because bad news -->
+          <tr>
+            <td style="background:#dc2626;padding:32px;text-align:center;">
+              <h1 style="margin:0;color:#ffffff;font-size:28px;font-weight:700;letter-spacing:-0.5px;">
+                🚨 FiveMoreMins
+              </h1>
+              <p style="margin:8px 0 0;color:#fecaca;font-size:14px;">
+                Accountability Notification
+              </p>
+            </td>
+          </tr>
+          <!-- Body -->
+          <tr>
+            <td style="padding:40px 48px;">
+              <h2 style="margin:0 0 8px;color:#fca5a5;font-size:20px;">
+                Bad news.
+              </h2>
+              <p style="margin:0 0 24px;color:#cbd5e1;font-size:15px;line-height:1.6;">
+                <strong style="color:#f1f5f9;">{{userName}}</strong> couldn't focus.
+                Here's the damage.
+              </p>
+              <div style="background:#0f172a;border-radius:8px;padding:20px;margin-bottom:24px;border-left:4px solid #dc2626;">
+                <p style="margin:0;color:#94a3b8;font-size:14px;line-height:1.6;">
+                  {{sessionSummary}}
+                </p>
+              </div>
+              <p style="margin:0 0 24px;color:#cbd5e1;font-size:15px;line-height:1.6;">
+                Their "stake" image is attached to this email. We don't make the rules.
+                Well, actually, they made the rules. We just enforce them.
+              </p>
+              <p style="margin:0 0 24px;color:#94a3b8;font-size:14px;line-height:1.5;">
+                Feel free to send them a message. Or don't. Either way, they know you know.
+              </p>
+              <div style="background:#0f172a;border-radius:8px;padding:16px;border:1px solid #334155;">
+                <p style="margin:0;color:#64748b;font-size:12px;text-align:center;">
+                  📎 Stake image attached (if they uploaded one — lazy, if not)
+                </p>
+              </div>
+            </td>
+          </tr>
+          <!-- Footer -->
+          <tr>
+            <td style="padding:24px 48px;border-top:1px solid #334155;">
+              <p style="margin:0;color:#475569;font-size:12px;text-align:center;">
+                You're receiving this because you agreed to be
+                <strong style="color:#64748b;">{{userName}}</strong>'s accountability partner.
+                Ask them to revoke your partnership if you'd like to opt out.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
