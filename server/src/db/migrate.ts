@@ -8,17 +8,10 @@ export function runMigrations(): void {
   const schemaPath = path.resolve(process.cwd(), 'src', 'db', 'schema.sql');
   const schema = fs.readFileSync(schemaPath, 'utf-8');
 
-  // Split on semicolons and execute each non-empty statement individually.
-  // db.exec() handles multi-statement strings in SQLite, but splitting lets
-  // us skip empty chunks from trailing semicolons without choking.
-  const statements = schema
-    .split(';')
-    .map((s) => s.trim())
-    .filter((s) => s.length > 0);
+  // Execute the entire schema in one shot. SQLite's db.exec() handles
+  // multi-statement strings fine, and this avoids any issues with
+  // semicolons appearing inside SQL string literals or comments.
+  db.exec(schema);
 
-  for (const statement of statements) {
-    db.exec(statement + ';');
-  }
-
-  console.log(`✅ Migrations complete (${statements.length} statements)`);
+  console.log('✅ Migrations complete');
 }

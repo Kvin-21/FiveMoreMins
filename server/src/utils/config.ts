@@ -12,6 +12,7 @@ export const config = {
   },
   fromEmail: process.env.FROM_EMAIL || 'noreply@fivemoremins.com',
   clientUrl: process.env.CLIENT_URL || 'http://localhost:5173',
-  // Used to build confirmation links in emails - should point at the Express server
+  sessionCookieMaxAge: 7 * 24 * 60 * 60 * 1000, // 7 days in ms
+  magicLinkTtl: 15 * 60, // 15 minutes in seconds
   serverUrl: process.env.SERVER_URL || 'http://localhost:3001',
 };

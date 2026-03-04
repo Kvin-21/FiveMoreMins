@@ -12,13 +12,22 @@ const transporter = nodemailer.createTransport({
   },
 });
 
+// Cache templates in memory after the first read — no need to hit the disk
+// on every email send.
+const templateCache = new Map<string, string>();
+
 /**
  * Load an HTML template from src/templates/.
  * Works whether running via ts-node-dev (CWD = server/) or compiled JS.
  */
 function loadTemplate(filename: string): string {
+  const cached = templateCache.get(filename);
+  if (cached) return cached;
+
   const templatePath = path.resolve(process.cwd(), 'src', 'templates', filename);
-  return fs.readFileSync(templatePath, 'utf-8');
+  const content = fs.readFileSync(templatePath, 'utf-8');
+  templateCache.set(filename, content);
+  return content;
 }
 
 /** Simple mustache-style replacement: {{key}} → value */

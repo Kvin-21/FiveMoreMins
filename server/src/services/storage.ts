@@ -17,8 +17,8 @@ export interface ImageRecord {
 
 const diskStorage = multer.diskStorage({
   destination: (req, _file, cb) => {
-    // requireAuth runs before this, so userId is guaranteed
-    const userId = req.session.userId || 0;
+    // requireAuth runs before multer, so userId is always set here.
+    const userId = req.session.userId!;
     const uploadDir = path.resolve(process.cwd(), 'uploads', String(userId));
     fs.mkdirSync(uploadDir, { recursive: true });
     cb(null, uploadDir);

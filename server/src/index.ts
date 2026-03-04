@@ -33,7 +33,7 @@ app.use(
     cookie: {
       httpOnly: true,
       sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // stay logged in for a week
+      maxAge: config.sessionCookieMaxAge,
     },
   }),
 );

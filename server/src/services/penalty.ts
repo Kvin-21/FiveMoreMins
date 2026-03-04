@@ -62,7 +62,11 @@ export async function triggerPenalty(sessionId: number, userId: number): Promise
 
   if (partner) {
     // Cap at 3 penalty emails per partner per calendar day — don't harass people
-    const todayStart = Math.floor(new Date().setHours(0, 0, 0, 0) / 1000);
+    // Use UTC midnight to avoid timezone-dependent rate-limit windows
+    const now = new Date();
+    const todayStart = Math.floor(
+      Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()) / 1000,
+    );
     const todayEnd = todayStart + 86400;
 
     const { count } = db

@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import db from '../db/connection';
+import { config } from '../utils/config';
 import { generateToken } from '../utils/token';
 import { sendMagicLink } from '../services/email';
 import { requireAuth } from '../middleware/auth';
@@ -31,7 +32,7 @@ router.post('/signup', authRateLimit, async (req: Request, res: Response) => {
 
     const normalizedEmail = email.toLowerCase().trim();
     const token = generateToken();
-    const expires = Math.floor(Date.now() / 1000) + 15 * 60; // 15 minutes
+    const expires = Math.floor(Date.now() / 1000) + config.magicLinkTtl;
 
     db.prepare(
       `INSERT INTO users (email, login_token, login_token_expires)
