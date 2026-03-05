@@ -122,4 +122,25 @@ router.post('/logout', generalRateLimit, (req: Request, res: Response) => {
   });
 });
 
+/**
+ * DELETE /api/account
+ * Permanently delete the authenticated user and all their data.
+ */
+router.delete('/account', requireAuth, generalRateLimit, (req: Request, res: Response) => {
+  try {
+    const userId = req.session.userId!;
+
+    // CASCADE deletes handle sessions, images, partner_consents, streaks, penalty_log
+    db.prepare('DELETE FROM users WHERE id = ?').run(userId);
+
+    req.session.destroy((err) => {
+      if (err) console.error('[auth] Session destroy on account delete:', err);
+      res.status(204).end();
+    });
+  } catch (err) {
+    console.error('[auth] Account delete error:', err);
+    res.status(500).json({ error: 'Failed to delete account.' });
+  }
+});
+
 export default router;
