@@ -40,7 +40,7 @@ function render(template: string, vars: Record<string, string>): string {
 /** Send a magic login link to the user. Best-effort — logs errors, doesn't throw. */
 export async function sendMagicLink(email: string, token: string): Promise<void> {
   try {
-    const loginUrl = `${config.clientUrl}/auth/verify?token=${token}`;
+    const loginUrl = `${config.clientUrl}/login/verify?token=${token}`;
     const html = render(loadTemplate('magicLink.html'), { loginUrl, email });
 
     await transporter.sendMail({

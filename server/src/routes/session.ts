@@ -39,7 +39,7 @@ router.post('/start', requireAuth, generalRateLimit, (req: Request, res: Respons
       )
       .run(userId, focusDuration ?? null);
 
-    res.json({ sessionId: result.lastInsertRowid });
+    res.json({ session: { id: result.lastInsertRowid } });
   } catch (err) {
     console.error('[session] Start error:', err);
     res.status(500).json({ error: 'Failed to start session.' });
@@ -53,14 +53,15 @@ router.post('/start', requireAuth, generalRateLimit, (req: Request, res: Respons
 router.post('/end', requireAuth, generalRateLimit, (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
-    const { sessionId, outcome, awaySeconds } = req.body as {
-      sessionId: number;
+    const { session_id: sessionId, outcome, away_seconds: awaySeconds, focus_duration: focusDuration } = req.body as {
+      session_id: number;
       outcome: 'completed' | 'failed' | 'abandoned';
-      awaySeconds?: number;
+      away_seconds?: number;
+      focus_duration?: number;
     };
 
     if (!sessionId || !outcome) {
-      res.status(400).json({ error: 'sessionId and outcome are required.' });
+      res.status(400).json({ error: 'session_id and outcome are required.' });
       return;
     }
 
@@ -75,8 +76,8 @@ router.post('/end', requireAuth, generalRateLimit, (req: Request, res: Response)
 
     const now = Math.floor(Date.now() / 1000);
     db.prepare(
-      `UPDATE sessions SET ended_at = ?, outcome = ?, away_seconds = ? WHERE id = ?`,
-    ).run(now, outcome, awaySeconds ?? 0, sessionId);
+      `UPDATE sessions SET ended_at = ?, outcome = ?, away_seconds = ?, focus_duration = COALESCE(?, focus_duration) WHERE id = ?`,
+    ).run(now, outcome, awaySeconds ?? 0, focusDuration ?? null, sessionId);
 
     if (outcome === 'completed') {
       updateStreak(userId);
