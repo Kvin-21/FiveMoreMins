@@ -31,7 +31,7 @@ interface UserRow {
 router.post('/invite', requireAuth, generalRateLimit, async (req: Request, res: Response) => {
   try {
     const userId = req.session.userId!;
-    const { partnerEmail } = req.body as { partnerEmail?: string };
+    const { partner_email: partnerEmail } = req.body as { partner_email?: string };
 
     if (!partnerEmail || !partnerEmail.includes('@')) {
       res.status(400).json({ error: 'A valid partner email is required.' });
@@ -64,7 +64,13 @@ router.post('/invite', requireAuth, generalRateLimit, async (req: Request, res: 
 
     await sendPartnerInvite(normalizedEmail, user.email, token);
 
-    res.json({ message: 'Partner invite sent. Now wait nervously.' });
+    // Return the new partner status so the client can update its state
+    res.json({
+      partner_email: normalizedEmail,
+      consented_at: null,
+      revoked_at: null,
+      invite_token: token,
+    });
   } catch (err) {
     console.error('[partner] Invite error:', err);
     res.status(500).json({ error: 'Failed to send invite.' });
@@ -158,7 +164,7 @@ router.get('/status', requireAuth, generalRateLimit, (req: Request, res: Respons
 
     const partner = db
       .prepare(
-        `SELECT partner_email, consented_at, revoked_at, invited_at
+        `SELECT partner_email, consented_at, revoked_at, invite_token
          FROM partner_consents
          WHERE user_id = ?
          ORDER BY invited_at DESC LIMIT 1`,
@@ -166,17 +172,18 @@ router.get('/status', requireAuth, generalRateLimit, (req: Request, res: Respons
       .get(userId) as Partial<PartnerConsentRow> | undefined;
 
     if (!partner) {
-      res.json({ partner: null, status: 'none' });
+      // No partner record; return empty PartnerStatus (all optional fields absent)
+      res.json({});
       return;
     }
 
-    const status = partner.revoked_at
-      ? 'revoked'
-      : partner.consented_at
-        ? 'active'
-        : 'pending';
-
-    res.json({ partner, status });
+    // Return a flat PartnerStatus object
+    res.json({
+      partner_email: partner.partner_email,
+      consented_at: partner.consented_at ?? undefined,
+      revoked_at: partner.revoked_at ?? undefined,
+      invite_token: partner.invite_token,
+    });
   } catch (err) {
     console.error('[partner] Status error:', err);
     res.status(500).json({ error: 'Failed to get partner status.' });

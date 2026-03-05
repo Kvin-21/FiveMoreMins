@@ -12,6 +12,7 @@ interface StreakRow {
 }
 
 interface SessionRow {
+  id: number;
   started_at: number;
   ended_at: number | null;
   outcome: string;
@@ -52,12 +53,26 @@ router.get('/', requireAuth, generalRateLimit, (req: Request, res: Response) => 
     // Last 5 failed sessions — the hall of shame
     const recentFailures = db
       .prepare(
-        `SELECT started_at, ended_at, away_seconds
+        `SELECT id, started_at, ended_at, away_seconds
          FROM sessions
          WHERE user_id = ? AND outcome = 'failed'
          ORDER BY started_at DESC LIMIT 5`,
       )
       .all(userId) as SessionRow[];
+
+    // Build a 7-day summary array: one entry per day, oldest-first
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const last7Days = Array.from({ length: 7 }, (_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      const dateStr = d.toISOString().split('T')[0];
+      const match = recentSessions.find((s) => {
+        const sd = new Date(s.started_at * 1000).toISOString().split('T')[0];
+        return sd === dateStr;
+      });
+      return { date: dateStr, outcome: match?.outcome ?? null };
+    });
 
     // All-time session count (excluding active)
     const { count: totalSessions } = db
@@ -69,7 +84,7 @@ router.get('/', requireAuth, generalRateLimit, (req: Request, res: Response) => 
 
     res.json({
       streak: streak ?? { current_streak: 0, longest_streak: 0, last_session_date: null },
-      recentSessions,
+      last7Days,
       recentFailures,
       totalSessions,
     });

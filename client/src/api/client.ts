@@ -8,6 +8,9 @@ let csrfToken: string | null = null;
 async function getCsrfToken(): Promise<string> {
   if (csrfToken) return csrfToken;
   const res = await fetch(`${BASE_URL}/api/csrf-token`, { credentials: 'include' });
+  if (!res.ok) {
+    throw new Error(`Could not reach server (${res.status}). Is the backend running?`);
+  }
   const data = await res.json() as { token: string };
   csrfToken = data.token;
   return csrfToken;
@@ -84,5 +87,21 @@ export const api = {
   post: <T>(path: string, body?: unknown) => request<T>('POST', path, body),
   put: <T>(path: string, body?: unknown) => request<T>('PUT', path, body),
   delete: <T>(path: string) => request<T>('DELETE', path),
+
+  /** Upload a file as multipart/form-data. Includes the CSRF token header. */
+  upload: async <T>(path: string, formData: FormData): Promise<T> => {
+    const token = await getCsrfToken();
+    const res = await fetch(`${BASE_URL}${path}`, {
+      method: 'POST',
+      credentials: 'include',
+      headers: { 'x-csrf-token': token },
+      body: formData,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({})) as { error?: string };
+      throw new Error(data.error || `Upload failed: ${res.status}`);
+    }
+    return res.json() as Promise<T>;
+  },
 };
 
