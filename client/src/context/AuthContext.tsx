@@ -17,8 +17,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check if there's an active session on mount
-    api.get<User>('/api/me')
-      .then((u) => setUser(u))
+    api.get<{ user: User }>('/api/me')
+      .then(({ user: u }) => setUser(u))
       .catch(() => setUser(null)) // not logged in, no big deal
       .finally(() => setLoading(false));
   }, []);

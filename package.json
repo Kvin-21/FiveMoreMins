@@ -2,7 +2,7 @@
   "name": "fivemoremins",
   "private": true,
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "npx --yes concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:client": "cd client && npm run dev",
     "dev:server": "cd server && npm run dev",
     "install:all": "npm install && cd client && npm install && cd ../server && npm install"

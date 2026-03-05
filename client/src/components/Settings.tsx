@@ -53,16 +53,7 @@ export default function Settings() {
     try {
       const formData = new FormData();
       formData.append('image', imageFile);
-      const res = await fetch('/api/upload-image', {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        throw new Error(data.error || 'Upload failed');
-      }
-      const data = await res.json();
+      const data = await api.upload<{ image: ImageRecord }>('/api/upload-image', formData);
       setImage(data.image);
       setImageFile(null);
       setImagePreview(null);
