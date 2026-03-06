@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import session from 'express-session';
 import rateLimit from 'express-rate-limit';
+import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
 import { doubleCsrf } from 'csrf-csrf';
@@ -32,8 +33,11 @@ app.use(cors({
   credentials: true,
 }));
 
+// 10MB limit — enough for image uploads while preventing large payload DoS
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// cookie-parser required by csrf-csrf to read/write CSRF cookies
+app.use(cookieParser());
 
 // Session middleware - cookie is httpOnly + sameSite for security
 app.use(session({
