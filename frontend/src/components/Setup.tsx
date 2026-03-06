@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signup } from '../utils/api';
+import { signup, uploadImage } from '../utils/api';
 import Toast from './Toast';
 
 interface SetupProps {
@@ -68,16 +68,14 @@ export default function Setup({ onLogin }: SetupProps) {
 
       // Upload image if provided
       if (imageFile) {
-        const uploadFormData = new FormData();
-        uploadFormData.append('image', imageFile);
-        const uploadRes = await fetch('/api/upload', {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${token}` },
-          body: uploadFormData,
-        });
-        const uploadData = await uploadRes.json();
-        if (uploadData.success) {
-          user.image_path = uploadData.imagePath;
+        try {
+          const uploadData = await uploadImage(imageFile);
+          if (uploadData.success) {
+            user.image_path = uploadData.imagePath;
+          }
+        } catch {
+          // Image upload failure is non-fatal — session still works without it
+          console.warn('Image upload failed, continuing without image');
         }
       }
 
