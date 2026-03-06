@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+.npm
+
+# Build output
+dist/
+build/
+
+# Environment variables (NEVER commit these)
+.env
+.env.local
+.env.production
+
+# SQLite database (has user data, don't commit)
+*.db
+*.db-shm
+*.db-wal
+
+# Uploaded images (user data, don't commit)
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# OS stuff
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+npm-debug.log*
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Vite cache
+.vite/
