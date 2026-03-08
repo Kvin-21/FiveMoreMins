@@ -1,11 +1,8 @@
 import express from 'express';
 import cors from 'cors';
-import session from 'express-session';
 import rateLimit from 'express-rate-limit';
-import cookieParser from 'cookie-parser';
 import path from 'path';
 import dotenv from 'dotenv';
-import { doubleCsrf } from 'csrf-csrf';
 
 // Load env vars before anything else
 dotenv.config();
@@ -36,38 +33,6 @@ app.use(cors({
 // 10MB limit — enough for image uploads while preventing large payload DoS
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
-// cookie-parser required by csrf-csrf to read/write CSRF cookies
-app.use(cookieParser());
-
-// Session middleware - cookie is httpOnly + sameSite for security
-app.use(session({
-  secret: process.env.SESSION_SECRET || 'fivemoremins-dev-secret-please-change',
-  resave: false,
-  saveUninitialized: false,
-  cookie: {
-    secure: isProd,        // HTTPS only in production
-    httpOnly: true,        // Not accessible via JS
-    sameSite: 'strict',    // Blocks cross-site requests
-    maxAge: 7 * 24 * 60 * 60 * 1000, // 1 week
-  },
-}));
-
-// CSRF protection using double-submit cookie pattern
-const { generateCsrfToken, doubleCsrfProtection } = doubleCsrf({
-  getSecret: () => process.env.SESSION_SECRET || 'fivemoremins-csrf-secret',
-  // Use auth token as session identifier so each user gets a distinct CSRF token
-  getSessionIdentifier: (req) =>
-    (req.headers.authorization?.replace('Bearer ', '') || req.headers['x-auth-token'] as string || 'anonymous'),
-  cookieName: 'fmm.x-csrf-token',
-  cookieOptions: {
-    secure: isProd,
-    sameSite: 'strict',
-    httpOnly: true,
-  },
-  size: 64,
-  getCsrfTokenFromRequest: (req) =>
-    (req.headers['x-csrf-token'] as string) || (req.body as Record<string, string>)?.['_csrf'],
-});
 
 // Rate limiters — generic API limiter for all routes
 const apiLimiter = rateLimit({
@@ -99,22 +64,16 @@ const penaltyLimiter = rateLimit({
 // Serve uploaded images statically (read-only, no rate limiting needed here)
 app.use('/uploads', express.static(path.join(__dirname, '..', 'uploads')));
 
-// Endpoint to get a CSRF token — frontend calls this on app load
-app.get('/api/csrf-token', (req, res) => {
-  const token = generateCsrfToken(req, res);
-  res.json({ csrfToken: token });
-});
-
 // Apply rate limiting globally to all /api routes
 app.use('/api', apiLimiter);
 
-// Mount routes (CSRF protection is applied per-route group on state-changing routes)
-app.use('/api/auth', authLimiter, doubleCsrfProtection, authRoutes);
-app.use('/api/session', doubleCsrfProtection, sessionRoutes);
-app.use('/api/upload', doubleCsrfProtection, uploadRoutes);
-app.use('/api/partner', doubleCsrfProtection, partnerRoutes);
-app.use('/api/penalty', penaltyLimiter, doubleCsrfProtection, penaltyRoutes);
-app.use('/api/dashboard', dashboardRoutes); // read-only, no CSRF needed
+// Mount routes
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/session', sessionRoutes);
+app.use('/api/upload', uploadRoutes);
+app.use('/api/partner', partnerRoutes);
+app.use('/api/penalty', penaltyLimiter, penaltyRoutes);
+app.use('/api/dashboard', dashboardRoutes);
 
 // Health check
 app.get('/api/health', (_req, res) => {
