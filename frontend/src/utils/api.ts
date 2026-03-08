@@ -1,22 +1,6 @@
 // API helper - keeps all the fetch calls in one place
 const BASE_URL = '/api';
 
-// CSRF token cache — fetched once on first mutating request
-let csrfToken: string | null = null;
-
-async function getCsrfToken(): Promise<string> {
-  if (csrfToken) return csrfToken;
-  const res = await fetch(`${BASE_URL}/csrf-token`, { credentials: 'include' });
-  const data = await res.json() as { csrfToken: string };
-  csrfToken = data.csrfToken;
-  return csrfToken;
-}
-
-// Reset cached token (e.g. after 403 responses)
-function clearCsrfToken() {
-  csrfToken = null;
-}
-
 // Get the stored auth token
 function getToken(): string | null {
   return localStorage.getItem('fmm_token');
@@ -31,22 +15,16 @@ function authHeaders(): HeadersInit {
   };
 }
 
-// Headers for authenticated mutating requests (includes CSRF token)
-async function mutatingHeaders(): Promise<HeadersInit> {
+// Headers for authenticated mutating requests
+function mutatingHeaders(): HeadersInit {
   const token = getToken();
-  const csrf = await getCsrfToken();
   return {
     'Content-Type': 'application/json',
-    'x-csrf-token': csrf,
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
 }
 
 async function handleResponse<T>(res: Response): Promise<T> {
-  // If we get a 403 it might be a stale CSRF token — clear it so next call re-fetches
-  if (res.status === 403) {
-    clearCsrfToken();
-  }
   const data = await res.json();
   if (!res.ok) {
     throw new Error((data as { error?: string }).error || `Request failed with status ${res.status}`);
@@ -58,7 +36,7 @@ async function handleResponse<T>(res: Response): Promise<T> {
 export async function signup(email: string, partnerEmail: string) {
   const res = await fetch(`${BASE_URL}/auth/signup`, {
     method: 'POST',
-    headers: await mutatingHeaders(),
+    headers: mutatingHeaders(),
     credentials: 'include',
     body: JSON.stringify({ email, partnerEmail }),
   });
@@ -68,7 +46,7 @@ export async function signup(email: string, partnerEmail: string) {
 export async function login(email: string) {
   const res = await fetch(`${BASE_URL}/auth/login`, {
     method: 'POST',
-    headers: await mutatingHeaders(),
+    headers: mutatingHeaders(),
     credentials: 'include',
     body: JSON.stringify({ email }),
   });
@@ -87,7 +65,7 @@ export async function getMe() {
 export async function startSession() {
   const res = await fetch(`${BASE_URL}/session/start`, {
     method: 'POST',
-    headers: await mutatingHeaders(),
+    headers: mutatingHeaders(),
     credentials: 'include',
   });
   return handleResponse<{ session: Session }>(res);
@@ -96,24 +74,22 @@ export async function startSession() {
 export async function endSession(sessionId: number, status: string, longestAway: number, duration: number) {
   const res = await fetch(`${BASE_URL}/session/end`, {
     method: 'POST',
-    headers: await mutatingHeaders(),
+    headers: mutatingHeaders(),
     credentials: 'include',
     body: JSON.stringify({ sessionId, status, longestAway, duration }),
   });
   return handleResponse<{ success: boolean }>(res);
 }
 
-// Upload — multipart form, needs CSRF but no Content-Type header (browser sets it with boundary)
+// Upload — multipart form, with no Content-Type header (browser sets it with boundary)
 export async function uploadImage(file: File) {
   const token = getToken();
-  const csrf = await getCsrfToken();
   const formData = new FormData();
   formData.append('image', file);
 
   const res = await fetch(`${BASE_URL}/upload`, {
     method: 'POST',
     headers: {
-      'x-csrf-token': csrf,
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
     },
     credentials: 'include',
@@ -126,7 +102,7 @@ export async function uploadImage(file: File) {
 export async function triggerPenalty(sessionId: number, awayMinutes: number) {
   const res = await fetch(`${BASE_URL}/penalty/trigger`, {
     method: 'POST',
-    headers: await mutatingHeaders(),
+    headers: mutatingHeaders(),
     credentials: 'include',
     body: JSON.stringify({ sessionId, awayMinutes }),
   });
