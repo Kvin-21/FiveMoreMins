@@ -16,6 +16,7 @@ export function useVisibility(isSessionActive: boolean) {
   });
 
   const hiddenAtRef = useRef<number | null>(null);
+  const resetBaseRef = useRef<number | null>(null); // tracks when resetAway was called while still hidden
   const totalAwayRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
@@ -26,12 +27,14 @@ export function useVisibility(isSessionActive: boolean) {
       if (document.hidden) {
         // Tab went hidden - record when
         hiddenAtRef.current = Date.now();
+        resetBaseRef.current = null;
         setState(prev => ({ ...prev, isHidden: true, awaySeconds: 0 }));
 
         // Start updating away time every second
         intervalRef.current = setInterval(() => {
           if (hiddenAtRef.current) {
-            const seconds = Math.floor((Date.now() - hiddenAtRef.current) / 1000);
+            const base = resetBaseRef.current ?? hiddenAtRef.current;
+            const seconds = Math.floor((Date.now() - base) / 1000);
             setState(prev => ({ ...prev, awaySeconds: seconds }));
           }
         }, 1000);
@@ -49,6 +52,7 @@ export function useVisibility(isSessionActive: boolean) {
           });
 
           hiddenAtRef.current = null;
+          resetBaseRef.current = null;
         }
 
         if (intervalRef.current) {
@@ -67,6 +71,10 @@ export function useVisibility(isSessionActive: boolean) {
   }, [isSessionActive]);
 
   const resetAway = () => {
+    // If still hidden, move the base forward so awaySeconds restarts from 0
+    if (hiddenAtRef.current !== null) {
+      resetBaseRef.current = Date.now();
+    }
     setState(prev => ({ ...prev, awaySeconds: 0 }));
   };
 

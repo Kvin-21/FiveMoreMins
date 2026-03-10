@@ -1349,3 +1349,68 @@
     max-width: none;
   }
 }
+
+/* Camera status bar */
+.camera-status {
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  padding: 4px 14px;
+  border-radius: var(--radius-sm);
+  margin: 0 auto 12px;
+  width: fit-content;
+}
+.camera-ok { color: var(--green); border: 1px solid rgba(0,255,136,0.3); }
+.camera-err { color: var(--red); border: 1px solid rgba(255,51,51,0.3); }
+.camera-loading { color: var(--text-muted); border: 1px solid var(--border); }
+
+/* Break time display inside timer */
+.timer-break {
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  display: block;
+  margin-top: 4px;
+}
+
+/* Session history status badges */
+.session-status-badge {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  letter-spacing: 0.05em;
+}
+.session-status-completed { background: rgba(0,255,136,0.15); color: var(--green); }
+.session-status-failed { background: rgba(255,51,51,0.15); color: var(--red); }
+.session-status-abandoned { background: rgba(255,255,255,0.08); color: var(--text-muted); }
+.session-status-active { background: rgba(255,107,53,0.15); color: var(--orange); }
+
+/* Success row in history */
+.failure-success { border-color: rgba(0,255,136,0.15) !important; }
+
+/* Setup mode toggle */
+.setup-mode-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+  background: rgba(255,255,255,0.04);
+  border-radius: var(--radius);
+  padding: 4px;
+}
+.mode-btn {
+  flex: 1;
+  padding: 8px 0;
+  border-radius: var(--radius-sm);
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: all var(--transition);
+}
+.mode-btn-active {
+  background: rgba(255,51,51,0.15);
+  color: var(--red);
+}

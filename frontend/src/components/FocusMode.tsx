@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useVisibility } from '../hooks/useVisibility';
+import { useFaceDetection } from '../hooks/useFaceDetection';
 import { startSession, endSession, triggerPenalty } from '../utils/api';
 import { getRandomMessage, getTier } from '../utils/messages';
 import WarningModal from './WarningModal';
@@ -24,6 +24,7 @@ export default function FocusMode({ user }: FocusModeProps) {
   const navigate = useNavigate();
   const [timerState, setTimerState] = useState<TimerState>('idle');
   const [elapsed, setElapsed] = useState(0); // total focus seconds
+  const [breakSeconds, setBreakSeconds] = useState(0); // total paused seconds this session
   const [sessionId, setSessionId] = useState<number | null>(null);
 
   // Warning modal state
@@ -39,10 +40,19 @@ export default function FocusMode({ user }: FocusModeProps) {
   // Refs for timer accuracy (timestamps, not just counting intervals)
   const startTimeRef = useRef<number | null>(null);
   const pausedAtRef = useRef<number>(0);
+  const pauseStartRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const totalDistractedAccumRef = useRef<number>(0);
 
   const isActive = timerState === 'running';
-  const { isHidden: _isHidden, awaySeconds, resetAway } = useVisibility(isActive);
+  const {
+    isDistracted: _isDistracted,
+    distractedSeconds,
+    totalDistractedSeconds,
+    cameraError,
+    cameraReady,
+    resetDistracted,
+  } = useFaceDetection(isActive);
 
   // Update elapsed time every second while running
   useEffect(() => {
@@ -63,11 +73,16 @@ export default function FocusMode({ user }: FocusModeProps) {
     };
   }, [timerState]);
 
-  // React to tab visibility changes
+  // Sync total distracted seconds from hook into ref for use in session end
   useEffect(() => {
-    if (!isActive || awaySeconds === 0) return;
+    totalDistractedAccumRef.current = totalDistractedSeconds;
+  }, [totalDistractedSeconds]);
 
-    const tier = getTier(awaySeconds);
+  // React to face detection distraction events
+  useEffect(() => {
+    if (!isActive || distractedSeconds === 0) return;
+
+    const tier = getTier(distractedSeconds);
     if (!tier) return;
 
     // Don't trigger another warning while one is already showing
@@ -81,7 +96,7 @@ export default function FocusMode({ user }: FocusModeProps) {
       setPenaltySent(false);
 
       if (sessionId) {
-        triggerPenalty(sessionId, Math.floor(awaySeconds / 60))
+        triggerPenalty(sessionId, Math.floor(distractedSeconds / 60))
           .then(() => setPenaltySent(true))
           .catch(() => setPenaltySent(true)); // show sent even if failed (dev mode)
       }
@@ -89,9 +104,9 @@ export default function FocusMode({ user }: FocusModeProps) {
 
     setWarningTier(tier);
     setWarningMessage(getRandomMessage(tier));
-    setWarningMinutes(Math.floor(awaySeconds / 60));
+    setWarningMinutes(Math.floor(distractedSeconds / 60));
     setWarningVisible(true);
-  }, [awaySeconds, isActive, warningVisible, penaltyTriggered, sessionId]);
+  }, [distractedSeconds, isActive, warningVisible, penaltyTriggered, sessionId]);
 
   const handleStart = async () => {
     if (!user) {
@@ -104,7 +119,9 @@ export default function FocusMode({ user }: FocusModeProps) {
       setSessionId(session.id);
       startTimeRef.current = Date.now();
       pausedAtRef.current = 0;
+      totalDistractedAccumRef.current = 0;
       setElapsed(0);
+      setBreakSeconds(0);
       setTimerState('running');
       setPenaltyTriggered(false);
     } catch (err) {
@@ -115,30 +132,40 @@ export default function FocusMode({ user }: FocusModeProps) {
   const handlePause = () => {
     if (timerState === 'running') {
       pausedAtRef.current = elapsed;
+      pauseStartRef.current = Date.now();
       startTimeRef.current = null;
       setTimerState('paused');
     } else if (timerState === 'paused') {
+      // Accumulate break time
+      if (pauseStartRef.current) {
+        const pausedFor = Math.floor((Date.now() - pauseStartRef.current) / 1000);
+        setBreakSeconds(prev => prev + pausedFor);
+        pauseStartRef.current = null;
+      }
       startTimeRef.current = Date.now();
       setTimerState('running');
     }
   };
 
-  const handleStop = useCallback(async (status: 'completed' | 'abandoned' = 'completed') => {
+  const handleStop = useCallback(async (status: 'completed' | 'failed' = 'completed') => {
     if (!sessionId) return;
 
     setTimerState('idle');
     if (intervalRef.current) clearInterval(intervalRef.current);
 
     try {
-      await endSession(sessionId, status, 0, elapsed);
+      await endSession(sessionId, status, totalDistractedAccumRef.current, elapsed);
     } catch (err) {
       console.error('Failed to end session:', err);
     }
 
     setElapsed(0);
+    setBreakSeconds(0);
     setSessionId(null);
     pausedAtRef.current = 0;
+    pauseStartRef.current = null;
     startTimeRef.current = null;
+    totalDistractedAccumRef.current = 0;
 
     if (status === 'completed') {
       setToast({ message: '🔥 Session complete! You actually did it.', type: 'success' });
@@ -147,7 +174,7 @@ export default function FocusMode({ user }: FocusModeProps) {
 
   const handleDismissWarning = () => {
     setWarningVisible(false);
-    resetAway();
+    resetDistracted();
   };
 
   // Format seconds as mm:ss or hh:mm:ss
@@ -167,8 +194,8 @@ export default function FocusMode({ user }: FocusModeProps) {
   const circumference = 2 * Math.PI * 140;
   const strokeDashoffset = circumference * (1 - progress);
 
-  // Background color shifts from dark to danger red based on focus time
-  const dangerLevel = Math.min(elapsed / (30 * 60), 1); // 30min = max danger
+  // Background color shifts from dark to danger red based on distraction time, not focus time
+  const dangerLevel = Math.min(totalDistractedSeconds / (30 * 60), 1); // 30min distracted = max danger
 
   return (
     <div
@@ -206,6 +233,15 @@ export default function FocusMode({ user }: FocusModeProps) {
         )}
       </div>
 
+      {/* Camera status indicator - only shown while session is active */}
+      {isActive && (
+        <div className={`camera-status ${cameraReady ? 'camera-ok' : cameraError ? 'camera-err' : 'camera-loading'}`}>
+          {cameraReady && '📷 Camera watching you'}
+          {!cameraReady && !cameraError && '📷 Starting camera...'}
+          {cameraError && `⚠ ${cameraError}`}
+        </div>
+      )}
+
       {/* THE TIMER */}
       <div className={`timer-container ${timerState === 'running' ? 'timer-active' : ''}`}>
         <svg className="timer-ring" viewBox="0 0 300 300">
@@ -237,6 +273,9 @@ export default function FocusMode({ user }: FocusModeProps) {
             {timerState === 'running' && 'focused'}
             {timerState === 'paused' && 'paused'}
           </span>
+          {timerState !== 'idle' && breakSeconds > 0 && (
+            <span className="timer-break">☕ {formatTime(breakSeconds)} break</span>
+          )}
         </div>
       </div>
 
@@ -260,16 +299,6 @@ export default function FocusMode({ user }: FocusModeProps) {
             >
               ✓ Complete
             </button>
-            <button
-              className="btn-danger btn-small"
-              onClick={() => {
-                if (confirm('End session without completing? Your streak may be affected.')) {
-                  handleStop('abandoned');
-                }
-              }}
-            >
-              ✕ Quit
-            </button>
           </>
         )}
       </div>
@@ -286,7 +315,7 @@ export default function FocusMode({ user }: FocusModeProps) {
           </div>
           <div className="danger-note">
             {dangerLevel < 0.5 && '🟢 All good — keep it up'}
-            {dangerLevel >= 0.5 && dangerLevel < 0.8 && '🟡 Don\'t you dare leave this tab'}
+            {dangerLevel >= 0.5 && dangerLevel < 0.8 && '🟡 Put the phone down'}
             {dangerLevel >= 0.8 && '🔴 DANGER ZONE — blackmail photo is ready to deploy'}
           </div>
         </div>
@@ -295,8 +324,8 @@ export default function FocusMode({ user }: FocusModeProps) {
       {/* Tip when idle */}
       {timerState === 'idle' && (
         <div className="focus-tips">
-          <p>💡 Leave this tab for <strong>5+ minutes</strong> and you'll get a warning.</p>
-          <p>💀 Leave for <strong>30+ minutes</strong> and the blackmail gets sent.</p>
+          <p>📷 Your webcam watches for phone use. Look down for <strong>5+ minutes</strong> and you'll get a warning.</p>
+          <p>💀 Keep looking at your phone for <strong>30+ minutes</strong> and the blackmail gets sent.</p>
           {!user && (
             <p className="tip-cta">
               <a href="/setup">Set up your account first →</a>

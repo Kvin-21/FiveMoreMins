@@ -175,30 +175,41 @@ export default function Dashboard({ user }: DashboardProps) {
         </div>
       </div>
 
-      {/* Recent failures */}
-      {d.recentFailures.length > 0 && (
+      {/* Full session history */}
+      {d.allSessions && d.allSessions.length > 0 && (
         <div className="dashboard-section">
-          <h3 className="section-title">Hall of Shame</h3>
+          <h3 className="section-title">Session History</h3>
           <div className="failures-list">
-            {d.recentFailures.map(failure => (
-              <div key={failure.id} className={`failure-item ${failure.penalty_triggered ? 'failure-penalty' : ''}`}>
-                <div className="failure-icon">
-                  {failure.penalty_triggered ? '💀' : '😤'}
-                </div>
-                <div className="failure-details">
-                  <div className="failure-date">{formatDate(failure.started_at)}</div>
-                  <div className="failure-stats">
-                    Away for {Math.floor(failure.longest_away_seconds / 60)} min
-                    {failure.penalty_triggered && (
-                      <span className="failure-badge">BLACKMAIL SENT</span>
-                    )}
+            {d.allSessions.map(session => {
+              const isSuccess = session.status === 'completed';
+              const isFailed = session.status === 'failed' || session.penalty_triggered;
+              const icon = isSuccess ? '✅' : isFailed ? (session.penalty_triggered ? '💀' : '😤') : '⏹';
+              return (
+                <div
+                  key={session.id}
+                  className={`failure-item ${session.penalty_triggered ? 'failure-penalty' : isSuccess ? 'failure-success' : ''}`}
+                >
+                  <div className="failure-icon">{icon}</div>
+                  <div className="failure-details">
+                    <div className="failure-date">{formatDate(session.started_at)}</div>
+                    <div className="failure-stats">
+                      <span className={`session-status-badge session-status-${session.status}`}>
+                        {session.status}
+                      </span>
+                      {session.longest_away_seconds > 0 && (
+                        <span> · {Math.floor(session.longest_away_seconds / 60)}m distracted</span>
+                      )}
+                      {session.penalty_triggered === 1 && (
+                        <span className="failure-badge">BLACKMAIL SENT</span>
+                      )}
+                    </div>
+                  </div>
+                  <div className="failure-duration">
+                    {formatDuration(session.duration_seconds)} focused
                   </div>
                 </div>
-                <div className="failure-duration">
-                  {formatDuration(failure.duration_seconds)} focused
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

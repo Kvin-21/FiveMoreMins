@@ -164,4 +164,13 @@ export interface DashboardData {
     longest_away_seconds: number;
     penalty_triggered: number;
   }>;
+  allSessions: Array<{
+    id: number;
+    started_at: string;
+    ended_at: string;
+    duration_seconds: number;
+    longest_away_seconds: number;
+    penalty_triggered: number;
+    status: string;
+  }>;
 }

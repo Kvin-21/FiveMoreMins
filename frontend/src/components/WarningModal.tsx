@@ -58,7 +58,7 @@ export default function WarningModal({
         <h2 className="modal-title">{config.title}</h2>
 
         <div className="modal-away-time">
-          <span className="away-label">TIME WASTED</span>
+          <span className="away-label">TIME ON PHONE</span>
           <span className="away-value">{awayMinutes} minutes</span>
         </div>
 

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { signup, uploadImage } from '../utils/api';
+import { signup, login, uploadImage } from '../utils/api';
 import Toast from './Toast';
 
 interface SetupProps {
@@ -11,6 +11,9 @@ export default function Setup({ onLogin }: SetupProps) {
   const navigate = useNavigate();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dropZoneRef = useRef<HTMLDivElement>(null);
+
+  // Toggle between signup (new user) and login (returning user)
+  const [mode, setMode] = useState<'signup' | 'login'>('signup');
 
   const [email, setEmail] = useState('');
   const [partnerEmail, setPartnerEmail] = useState('');
@@ -54,13 +57,27 @@ export default function Setup({ onLogin }: SetupProps) {
     e.preventDefault();
 
     if (!email) return setToast({ message: 'Enter your email', type: 'error' });
-    if (!partnerEmail) return setToast({ message: "Enter your partner's email", type: 'error' });
-    if (email === partnerEmail) return setToast({ message: "Your partner can't be yourself (or can it?)", type: 'error' });
-    if (!consent) return setToast({ message: 'You need to check the consent box', type: 'error' });
+
+    if (mode === 'signup') {
+      if (!partnerEmail) return setToast({ message: "Enter your partner's email", type: 'error' });
+      if (email === partnerEmail) return setToast({ message: "Your partner can't be yourself (or can it?)", type: 'error' });
+      if (!imageFile) return setToast({ message: 'Upload an embarrassing photo — that\'s the whole point', type: 'error' });
+      if (!consent) return setToast({ message: 'You need to check the consent box', type: 'error' });
+    } else {
+      if (!partnerEmail) return setToast({ message: "Enter your partner's email", type: 'error' });
+    }
 
     setLoading(true);
 
     try {
+      if (mode === 'login') {
+        // Returning user — just look them up
+        const { token, user } = await login(email);
+        onLogin(token, user);
+        navigate('/focus');
+        return;
+      }
+
       // Create/login user
       const { token, user } = await signup(email, partnerEmail);
       localStorage.setItem('fmm_token', token);
@@ -96,6 +113,24 @@ export default function Setup({ onLogin }: SetupProps) {
         <h2 className="setup-title">Configure Your Doom</h2>
         <p className="setup-subtitle">Set up your accountability trap. No take-backs.</p>
 
+        {/* Mode toggle */}
+        <div className="setup-mode-toggle">
+          <button
+            type="button"
+            className={`mode-btn ${mode === 'signup' ? 'mode-btn-active' : ''}`}
+            onClick={() => setMode('signup')}
+          >
+            New Setup
+          </button>
+          <button
+            type="button"
+            className={`mode-btn ${mode === 'login' ? 'mode-btn-active' : ''}`}
+            onClick={() => setMode('login')}
+          >
+            Login
+          </button>
+        </div>
+
         <form onSubmit={handleSubmit} className="setup-form">
           {/* Your email */}
           <div className="form-group">
@@ -128,64 +163,71 @@ export default function Setup({ onLogin }: SetupProps) {
             <span className="form-hint">Choose someone who will judge you. Choose wisely.</span>
           </div>
 
-          {/* Image upload */}
-          <div className="form-group">
-            <label className="form-label">Embarrassing Photo (optional but recommended)</label>
-            <div
-              ref={dropZoneRef}
-              className={`drop-zone ${isDragging ? 'dragging' : ''} ${imagePreview ? 'has-image' : ''}`}
-              onDrop={handleDrop}
-              onDragOver={handleDragOver}
-              onDragLeave={handleDragLeave}
-              onClick={() => fileInputRef.current?.click()}
-            >
-              {imagePreview ? (
-                <div className="image-preview-container">
-                  <img src={imagePreview} alt="Preview" className="image-preview" />
-                  <div className="image-preview-overlay">
-                    <span>Click to change</span>
+          {/* Image upload — only on signup, and now compulsory */}
+          {mode === 'signup' && (
+            <div className="form-group">
+              <label className="form-label">
+                Embarrassing Photo
+                <span className="label-danger"> ⚠ Required</span>
+              </label>
+              <div
+                ref={dropZoneRef}
+                className={`drop-zone ${isDragging ? 'dragging' : ''} ${imagePreview ? 'has-image' : ''}`}
+                onDrop={handleDrop}
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                {imagePreview ? (
+                  <div className="image-preview-container">
+                    <img src={imagePreview} alt="Preview" className="image-preview" />
+                    <div className="image-preview-overlay">
+                      <span>Click to change</span>
+                    </div>
                   </div>
-                </div>
-              ) : (
-                <div className="drop-zone-content">
-                  <span className="drop-icon">📷</span>
-                  <p>Drop your photo here or click to browse</p>
-                  <p className="drop-hint">JPG, PNG, GIF — Max 10MB</p>
-                </div>
-              )}
-            </div>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden-input"
-              onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
-            />
-          </div>
-
-          {/* Consent checkbox */}
-          <div className="form-group consent-group">
-            <label className="checkbox-label">
+                ) : (
+                  <div className="drop-zone-content">
+                    <span className="drop-icon">📷</span>
+                    <p>Drop your photo here or click to browse</p>
+                    <p className="drop-hint">JPG, PNG, GIF — Max 10MB</p>
+                  </div>
+                )}
+              </div>
               <input
-                type="checkbox"
-                checked={consent}
-                onChange={e => setConsent(e.target.checked)}
-                className="checkbox-input"
+                ref={fileInputRef}
+                type="file"
+                accept="image/*"
+                className="hidden-input"
+                onChange={e => e.target.files?.[0] && handleFileSelect(e.target.files[0])}
               />
-              <span className="checkbox-custom"></span>
-              <span className="checkbox-text">
-                I understand that if I leave my focus session for 30+ minutes, my uploaded image
-                will be sent to my accountability partner. This is consensual and for motivational purposes.
-              </span>
-            </label>
-          </div>
+            </div>
+          )}
+
+          {/* Consent checkbox — only on signup */}
+          {mode === 'signup' && (
+            <div className="form-group consent-group">
+              <label className="checkbox-label">
+                <input
+                  type="checkbox"
+                  checked={consent}
+                  onChange={e => setConsent(e.target.checked)}
+                  className="checkbox-input"
+                />
+                <span className="checkbox-custom"></span>
+                <span className="checkbox-text">
+                  I understand that if I look at my phone for 30+ minutes during a focus session, my uploaded image
+                  will be sent to my accountability partner. This is consensual and for motivational purposes.
+                </span>
+              </label>
+            </div>
+          )}
 
           <button
             type="submit"
             className={`btn-primary btn-full ${loading ? 'btn-loading' : ''}`}
             disabled={loading}
           >
-            {loading ? 'Setting up...' : "Let's Begin ☠️"}
+            {loading ? 'Setting up...' : mode === 'login' ? 'Login →' : "Let's Begin ☠️"}
           </button>
         </form>
       </div>

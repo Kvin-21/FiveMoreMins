@@ -50,6 +50,14 @@ router.get('/', requireAuth, (req: Request, res: Response) => {
     LIMIT 10
   `).all(user.id) as { id: number; started_at: string; ended_at: string; duration_seconds: number; longest_away_seconds: number; penalty_triggered: number }[];
 
+  // Full session history - every session ever, newest first
+  const allSessions = db.prepare(`
+    SELECT id, started_at, ended_at, duration_seconds, longest_away_seconds, penalty_triggered, status
+    FROM sessions
+    WHERE user_id = ?
+    ORDER BY started_at DESC
+  `).all(user.id) as { id: number; started_at: string; ended_at: string; duration_seconds: number; longest_away_seconds: number; penalty_triggered: number; status: string }[];
+
   const successRate = totalStats.total_sessions > 0
     ? Math.round((totalStats.total_successes / totalStats.total_sessions) * 100)
     : 0;
@@ -69,6 +77,7 @@ router.get('/', requireAuth, (req: Request, res: Response) => {
       successRate,
     },
     recentFailures,
+    allSessions,
   });
 });
 
