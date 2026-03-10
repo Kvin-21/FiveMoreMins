@@ -44,14 +44,19 @@ export default function FocusMode({ user }: FocusModeProps) {
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const totalDistractedAccumRef = useRef<number>(0);
 
+  // Ref for the visible camera feed element
+  const displayVideoRef = useRef<HTMLVideoElement | null>(null);
+
   const isActive = timerState === 'running';
   const {
-    isDistracted: _isDistracted,
+    isDistracted,
     distractedSeconds,
     totalDistractedSeconds,
     cameraError,
     cameraReady,
     resetDistracted,
+    startCamera,
+    stopCamera,
   } = useFaceDetection(isActive);
 
   // Update elapsed time every second while running
@@ -124,6 +129,8 @@ export default function FocusMode({ user }: FocusModeProps) {
       setBreakSeconds(0);
       setTimerState('running');
       setPenaltyTriggered(false);
+      // Start camera and pipe the stream into the visible video element
+      startCamera(displayVideoRef.current);
     } catch (err) {
       setToast({ message: 'Failed to start session. Is the backend running?', type: 'error' });
     }
@@ -152,6 +159,7 @@ export default function FocusMode({ user }: FocusModeProps) {
 
     setTimerState('idle');
     if (intervalRef.current) clearInterval(intervalRef.current);
+    stopCamera();
 
     try {
       await endSession(sessionId, status, totalDistractedAccumRef.current, elapsed);
@@ -170,7 +178,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     if (status === 'completed') {
       setToast({ message: '🔥 Session complete! You actually did it.', type: 'success' });
     }
-  }, [sessionId, elapsed]);
+  }, [sessionId, elapsed, stopCamera]);
 
   const handleDismissWarning = () => {
     setWarningVisible(false);
@@ -189,13 +197,22 @@ export default function FocusMode({ user }: FocusModeProps) {
   };
 
   // Circular progress - fills up over 60 minutes (one full session goal)
+  // When distracted, the ring shows distraction progress instead
   const maxSeconds = 60 * 60;
-  const progress = Math.min(elapsed / maxSeconds, 1);
+  const distractionMax = 30 * 60; // 30min distracted = full ring in distraction mode
+  const progress = isDistracted
+    ? Math.min(distractedSeconds / distractionMax, 1)
+    : Math.min(elapsed / maxSeconds, 1);
   const circumference = 2 * Math.PI * 140;
   const strokeDashoffset = circumference * (1 - progress);
 
   // Background color shifts from dark to danger red based on distraction time, not focus time
   const dangerLevel = Math.min(totalDistractedSeconds / (30 * 60), 1); // 30min distracted = max danger
+
+  // Ring colour: red when distracted, green→orange→red when focused based on time
+  const ringColour = isDistracted
+    ? '#ff3333'
+    : progress > 0.8 ? '#ff3333' : progress > 0.5 ? '#ff6b35' : '#00ff88';
 
   return (
     <div
@@ -233,51 +250,88 @@ export default function FocusMode({ user }: FocusModeProps) {
         )}
       </div>
 
-      {/* Camera status indicator - only shown while session is active */}
-      {isActive && (
-        <div className={`camera-status ${cameraReady ? 'camera-ok' : cameraError ? 'camera-err' : 'camera-loading'}`}>
-          {cameraReady && '📷 Camera watching you'}
-          {!cameraReady && !cameraError && '📷 Starting camera...'}
-          {cameraError && `⚠ ${cameraError}`}
+      {/* Camera feed + timer + side stats layout */}
+      <div className="focus-main-row">
+
+        {/* Left side stat: total elapsed */}
+        {timerState !== 'idle' && (
+          <div className="focus-side-stat focus-side-left">
+            <span className="side-stat-label">ELAPSED</span>
+            <span className="side-stat-value">{formatTime(elapsed)}</span>
+            {breakSeconds > 0 && (
+              <span className="side-stat-sub">☕ {formatTime(breakSeconds)} break</span>
+            )}
+          </div>
+        )}
+
+        {/* THE TIMER — shows distraction seconds when distracted, else elapsed */}
+        <div className={`timer-container ${timerState === 'running' ? 'timer-active' : ''} ${isDistracted ? 'timer-distracted' : ''}`}>
+          <svg className="timer-ring" viewBox="0 0 300 300">
+            {/* Background ring */}
+            <circle
+              cx="150" cy="150" r="140"
+              fill="none"
+              stroke="rgba(255,255,255,0.05)"
+              strokeWidth="8"
+            />
+            {/* Progress ring */}
+            <circle
+              cx="150" cy="150" r="140"
+              fill="none"
+              stroke={ringColour}
+              strokeWidth="8"
+              strokeLinecap="round"
+              strokeDasharray={circumference}
+              strokeDashoffset={strokeDashoffset}
+              transform="rotate(-90 150 150)"
+              style={{ transition: 'stroke-dashoffset 0.5s ease, stroke 0.5s ease' }}
+            />
+          </svg>
+
+          <div className="timer-display">
+            <span className={`timer-time ${isDistracted ? 'timer-time-danger' : ''}`}>
+              {isDistracted ? formatTime(distractedSeconds) : formatTime(elapsed)}
+            </span>
+            <span className="timer-label">
+              {timerState === 'idle' && 'start when ready'}
+              {timerState === 'running' && (isDistracted ? '📵 procrastinating' : 'focused')}
+              {timerState === 'paused' && 'paused'}
+            </span>
+          </div>
+        </div>
+
+        {/* Right side stat: total focused (elapsed minus distracted) */}
+        {timerState !== 'idle' && (
+          <div className="focus-side-stat focus-side-right">
+            <span className="side-stat-label">FOCUSED</span>
+            <span className="side-stat-value side-stat-green">
+              {formatTime(Math.max(0, elapsed - totalDistractedSeconds))}
+            </span>
+            {totalDistractedSeconds > 0 && (
+              <span className="side-stat-sub side-stat-red">📵 {formatTime(totalDistractedSeconds)} off</span>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Camera feed — visible once session starts */}
+      {timerState !== 'idle' && (
+        <div className="camera-feed-wrapper">
+          <video
+            ref={displayVideoRef}
+            className="camera-feed-video"
+            autoPlay
+            playsInline
+            muted
+          />
+          <div className={`camera-feed-status ${isDistracted ? 'feed-status-bad' : cameraReady ? 'feed-status-ok' : 'feed-status-loading'}`}>
+            {!cameraReady && !cameraError && '📷 Starting camera...'}
+            {cameraError && `⚠ ${cameraError}`}
+            {cameraReady && !isDistracted && '✅ Focused'}
+            {cameraReady && isDistracted && '📵 Procrastinating'}
+          </div>
         </div>
       )}
-
-      {/* THE TIMER */}
-      <div className={`timer-container ${timerState === 'running' ? 'timer-active' : ''}`}>
-        <svg className="timer-ring" viewBox="0 0 300 300">
-          {/* Background ring */}
-          <circle
-            cx="150" cy="150" r="140"
-            fill="none"
-            stroke="rgba(255,255,255,0.05)"
-            strokeWidth="8"
-          />
-          {/* Progress ring */}
-          <circle
-            cx="150" cy="150" r="140"
-            fill="none"
-            stroke={progress > 0.8 ? '#ff3333' : progress > 0.5 ? '#ff6b35' : '#00ff88'}
-            strokeWidth="8"
-            strokeLinecap="round"
-            strokeDasharray={circumference}
-            strokeDashoffset={strokeDashoffset}
-            transform="rotate(-90 150 150)"
-            style={{ transition: 'stroke-dashoffset 0.5s ease, stroke 0.5s ease' }}
-          />
-        </svg>
-
-        <div className="timer-display">
-          <span className="timer-time">{formatTime(elapsed)}</span>
-          <span className="timer-label">
-            {timerState === 'idle' && 'start when ready'}
-            {timerState === 'running' && 'focused'}
-            {timerState === 'paused' && 'paused'}
-          </span>
-          {timerState !== 'idle' && breakSeconds > 0 && (
-            <span className="timer-break">☕ {formatTime(breakSeconds)} break</span>
-          )}
-        </div>
-      </div>
 
       {/* Control buttons */}
       <div className="focus-controls">

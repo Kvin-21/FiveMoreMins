@@ -36,12 +36,15 @@ export default function Dashboard({ user }: DashboardProps) {
     return `${m}m`;
   };
 
+  // Singapore time (UTC+8)
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-US', {
+    return new Date(dateStr).toLocaleDateString('en-SG', {
+      timeZone: 'Asia/Singapore',
       month: 'short',
       day: 'numeric',
       hour: '2-digit',
       minute: '2-digit',
+      hour12: true,
     });
   };
 
@@ -197,15 +200,20 @@ export default function Dashboard({ user }: DashboardProps) {
                         {session.status}
                       </span>
                       {session.longest_away_seconds > 0 && (
-                        <span> · {Math.floor(session.longest_away_seconds / 60)}m distracted</span>
+                        <span className="session-distracted-time">
+                          📵 {formatDuration(session.longest_away_seconds)} distracted
+                        </span>
                       )}
                       {session.penalty_triggered === 1 && (
                         <span className="failure-badge">BLACKMAIL SENT</span>
                       )}
                     </div>
                   </div>
-                  <div className="failure-duration">
-                    {formatDuration(session.duration_seconds)} focused
+                  <div className="failure-duration-col">
+                    <span className="failure-duration">{formatDuration(session.duration_seconds)} focused</span>
+                    {session.break_seconds != null && session.break_seconds > 0 && (
+                      <span className="failure-break">☕ {formatDuration(session.break_seconds)} break</span>
+                    )}
                   </div>
                 </div>
               );

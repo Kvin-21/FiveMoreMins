@@ -5,9 +5,9 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 // MILD_SECONDS   → seconds of detected distraction before the first warning
 // MEDIUM_SECONDS → seconds before the second (angrier) warning
 // PENALTY_SECONDS→ seconds before the blackmail email fires
-export const MILD_SECONDS = 5 * 60;    // 5 minutes
-export const MEDIUM_SECONDS = 15 * 60; // 15 minutes
-export const PENALTY_SECONDS = 30 * 60; // 30 minutes
+export const MILD_SECONDS = 2 * 60;    // 5 minutes
+export const MEDIUM_SECONDS = 3 * 60; // 15 minutes
+export const PENALTY_SECONDS = 6 * 60; // 30 minutes
 
 // Head-tilt threshold: chin.y - nose.y > this value means looking down at phone
 const HEAD_TILT_THRESHOLD = 0.14;
@@ -34,6 +34,7 @@ export function useFaceDetection(isSessionActive: boolean) {
     cameraReady: false,
   });
 
+  // Exposed so FocusMode can attach the feed to a <video> element
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const faceMeshRef = useRef<any>(null);
@@ -68,9 +69,13 @@ export function useFaceDetection(isSessionActive: boolean) {
       clearTimeout(confirmTimerRef.current);
       confirmTimerRef.current = null;
     }
+    // Detach stream from any video element that was handed out
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
   }, []);
 
-  const startCamera = useCallback(async () => {
+  const startCamera = useCallback(async (displayVideoEl?: HTMLVideoElement | null) => {
     try {
       // Dynamically load MediaPipe — runs fully client-side, no server needed
       const [{ FaceMesh }, { Camera }] = await Promise.all([
@@ -78,10 +83,16 @@ export function useFaceDetection(isSessionActive: boolean) {
         import('@mediapipe/camera_utils'),
       ]);
 
-      const video = document.createElement('video');
-      video.style.display = 'none';
-      video.setAttribute('playsinline', 'true');
-      document.body.appendChild(video);
+      // If a visible video element was passed in, use it so the feed is shown on screen
+      let video: HTMLVideoElement;
+      if (displayVideoEl) {
+        video = displayVideoEl;
+      } else {
+        video = document.createElement('video');
+        video.style.display = 'none';
+        video.setAttribute('playsinline', 'true');
+        document.body.appendChild(video);
+      }
       videoRef.current = video;
 
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -242,9 +253,8 @@ export function useFaceDetection(isSessionActive: boolean) {
       return;
     }
 
-    startCamera();
-    return () => { stopCamera(); };
-  }, [isSessionActive, startCamera, stopCamera]);
+    // Don't auto-start here — FocusMode calls startCamera directly with the video element
+  }, [isSessionActive, stopCamera]);
 
   const resetDistracted = useCallback(() => {
     // If currently distracted, move the base forward so distractedSeconds restarts from 0
@@ -254,5 +264,5 @@ export function useFaceDetection(isSessionActive: boolean) {
     setState(prev => ({ ...prev, distractedSeconds: 0 }));
   }, []);
 
-  return { ...state, resetDistracted, totalDistractedSeconds: totalDistractedRef.current };
+  return { ...state, resetDistracted, totalDistractedSeconds: totalDistractedRef.current, startCamera, stopCamera, videoRef };
 }

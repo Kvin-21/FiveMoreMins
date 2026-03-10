@@ -172,5 +172,6 @@ export interface DashboardData {
     longest_away_seconds: number;
     penalty_triggered: number;
     status: string;
+    break_seconds: number;
   }>;
 }

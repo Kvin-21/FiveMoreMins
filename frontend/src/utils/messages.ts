@@ -37,9 +37,9 @@ export function getRandomMessage(tier: 'mild' | 'medium' | 'aggressive'): string
 export function getTier(distractedSeconds: number): 'mild' | 'medium' | 'aggressive' | null {
   // ─── Change these to adjust warning thresholds ───────────────────────────────
   // These must match MILD_SECONDS / MEDIUM_SECONDS / PENALTY_SECONDS in useFaceDetection.ts
-  if (distractedSeconds >= 30 * 60) return 'aggressive'; // 30 min
-  if (distractedSeconds >= 15 * 60) return 'medium';     // 15 min
-  if (distractedSeconds >= 5 * 60) return 'mild';        // 5 min
+  if (distractedSeconds >= 6 * 60) return 'aggressive'; // 30 min
+  if (distractedSeconds >= 3 * 60) return 'medium';     // 15 min
+  if (distractedSeconds >= 2 * 60) return 'mild';        // 5 min
   // ─────────────────────────────────────────────────────────────────────────────
   return null;
 }
