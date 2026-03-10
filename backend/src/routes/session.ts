@@ -29,7 +29,7 @@ router.post('/start', requireAuth, (req: Request, res: Response) => {
 // POST /api/session/end - wrap up a session
 router.post('/end', requireAuth, (req: Request, res: Response) => {
   const user = (req as AuthRequest).user;
-  const { sessionId, status, longestAway, duration } = req.body;
+  const { sessionId, status, longestAway, duration, breakSeconds } = req.body;
 
   if (!sessionId) {
     return res.status(400).json({ error: 'sessionId is required' });
@@ -44,9 +44,9 @@ router.post('/end', requireAuth, (req: Request, res: Response) => {
 
   db.prepare(`
     UPDATE sessions 
-    SET status = ?, ended_at = CURRENT_TIMESTAMP, duration_seconds = ?, longest_away_seconds = ?
+    SET status = ?, ended_at = CURRENT_TIMESTAMP, duration_seconds = ?, longest_away_seconds = ?, break_seconds = ?
     WHERE id = ?
-  `).run(status || 'completed', duration || 0, longestAway || 0, sessionId);
+  `).run(status || 'completed', duration || 0, longestAway || 0, breakSeconds || 0, sessionId);
 
   // Update streaks if session completed successfully
   if (status === 'completed') {
@@ -79,26 +79,31 @@ function updateStreak(userId: number) {
   }
 
   const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-  let newStreak = streak.current_streak;
 
   if (streak.last_session_date === today) {
-    // Already completed a session today, don't increment
+    // Already logged today, just update longest if needed
+    if (streak.current_streak > streak.longest_streak) {
+      db.prepare('UPDATE streaks SET longest_streak = ? WHERE user_id = ?').run(streak.current_streak, userId);
+    }
     return;
-  } else if (streak.last_session_date === yesterday) {
-    // Continuing the streak!
-    newStreak = streak.current_streak + 1;
-  } else {
-    // Streak broken (missed a day), start over
-    newStreak = 1;
   }
 
-  const longestStreak = Math.max(newStreak, streak.longest_streak);
-  db.prepare('UPDATE streaks SET current_streak = ?, longest_streak = ?, last_session_date = ? WHERE user_id = ?')
-    .run(newStreak, longestStreak, today, userId);
+  if (streak.last_session_date === yesterday) {
+    // Continuing a streak
+    const newStreak = streak.current_streak + 1;
+    const newLongest = Math.max(newStreak, streak.longest_streak);
+    db.prepare('UPDATE streaks SET current_streak = ?, longest_streak = ?, last_session_date = ? WHERE user_id = ?')
+      .run(newStreak, newLongest, today, userId);
+  } else {
+    // Streak broken, start fresh
+    db.prepare('UPDATE streaks SET current_streak = 1, last_session_date = ? WHERE user_id = ?').run(today, userId);
+    if (streak.longest_streak < 1) {
+      db.prepare('UPDATE streaks SET longest_streak = 1 WHERE user_id = ?').run(userId);
+    }
+  }
 }
 
 function resetStreak(userId: number) {
-  // A failure resets current streak but not longest streak
   db.prepare('UPDATE streaks SET current_streak = 0 WHERE user_id = ?').run(userId);
 }
 

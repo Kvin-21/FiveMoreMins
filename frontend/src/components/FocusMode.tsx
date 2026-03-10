@@ -23,8 +23,8 @@ type TimerState = 'idle' | 'running' | 'paused';
 export default function FocusMode({ user }: FocusModeProps) {
   const navigate = useNavigate();
   const [timerState, setTimerState] = useState<TimerState>('idle');
-  const [elapsed, setElapsed] = useState(0); // total focus seconds
-  const [breakSeconds, setBreakSeconds] = useState(0); // total paused seconds this session
+  const [elapsed, setElapsed] = useState(0);
+  const [breakSeconds, setBreakSeconds] = useState(0);
   const [sessionId, setSessionId] = useState<number | null>(null);
 
   // Warning modal state
@@ -33,7 +33,7 @@ export default function FocusMode({ user }: FocusModeProps) {
   const [warningMessage, setWarningMessage] = useState('');
   const [warningMinutes, setWarningMinutes] = useState(0);
   const [penaltySent, setPenaltySent] = useState(false);
-  const [penaltyTriggered, setPenaltyTriggered] = useState(false); // one per session
+  const [penaltyTriggered, setPenaltyTriggered] = useState(false);
 
   const [toast, setToast] = useState<{ message: string; type: 'error' | 'success' } | null>(null);
 
@@ -43,11 +43,14 @@ export default function FocusMode({ user }: FocusModeProps) {
   const pauseStartRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const totalDistractedAccumRef = useRef<number>(0);
+  const breakSecondsRef = useRef<number>(0);
 
-  // Ref for the visible camera feed element
+  // Ref for the visible camera feed element — stream attaches here
   const displayVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  const isActive = timerState === 'running';
+  // Camera is active whenever we have a session (running OR paused) so it doesn't restart on pause
+  const sessionActive = timerState === 'running' || timerState === 'paused';
+
   const {
     isDistracted,
     distractedSeconds,
@@ -55,9 +58,23 @@ export default function FocusMode({ user }: FocusModeProps) {
     cameraError,
     cameraReady,
     resetDistracted,
-    startCamera,
-    stopCamera,
-  } = useFaceDetection(isActive);
+    stream,
+  } = useFaceDetection(sessionActive);
+
+  // Attach the camera stream to the visible video element whenever it changes
+  useEffect(() => {
+    if (displayVideoRef.current && stream) {
+      displayVideoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  // Also attach when the video element mounts (ref callback timing)
+  const setDisplayVideoRef = useCallback((el: HTMLVideoElement | null) => {
+    displayVideoRef.current = el;
+    if (el && stream) {
+      el.srcObject = stream;
+    }
+  }, [stream]);
 
   // Update elapsed time every second while running
   useEffect(() => {
@@ -85,7 +102,7 @@ export default function FocusMode({ user }: FocusModeProps) {
 
   // React to face detection distraction events
   useEffect(() => {
-    if (!isActive || distractedSeconds === 0) return;
+    if (timerState !== 'running' || distractedSeconds === 0) return;
 
     const tier = getTier(distractedSeconds);
     if (!tier) return;
@@ -103,7 +120,7 @@ export default function FocusMode({ user }: FocusModeProps) {
       if (sessionId) {
         triggerPenalty(sessionId, Math.floor(distractedSeconds / 60))
           .then(() => setPenaltySent(true))
-          .catch(() => setPenaltySent(true)); // show sent even if failed (dev mode)
+          .catch(() => setPenaltySent(true));
       }
     }
 
@@ -111,7 +128,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     setWarningMessage(getRandomMessage(tier));
     setWarningMinutes(Math.floor(distractedSeconds / 60));
     setWarningVisible(true);
-  }, [distractedSeconds, isActive, warningVisible, penaltyTriggered, sessionId]);
+  }, [distractedSeconds, timerState, warningVisible, penaltyTriggered, sessionId]);
 
   const handleStart = async () => {
     if (!user) {
@@ -124,13 +141,12 @@ export default function FocusMode({ user }: FocusModeProps) {
       setSessionId(session.id);
       startTimeRef.current = Date.now();
       pausedAtRef.current = 0;
+      breakSecondsRef.current = 0;
       totalDistractedAccumRef.current = 0;
       setElapsed(0);
       setBreakSeconds(0);
       setTimerState('running');
       setPenaltyTriggered(false);
-      // Start camera and pipe the stream into the visible video element
-      startCamera(displayVideoRef.current);
     } catch (err) {
       setToast({ message: 'Failed to start session. Is the backend running?', type: 'error' });
     }
@@ -146,7 +162,8 @@ export default function FocusMode({ user }: FocusModeProps) {
       // Accumulate break time
       if (pauseStartRef.current) {
         const pausedFor = Math.floor((Date.now() - pauseStartRef.current) / 1000);
-        setBreakSeconds(prev => prev + pausedFor);
+        breakSecondsRef.current += pausedFor;
+        setBreakSeconds(breakSecondsRef.current);
         pauseStartRef.current = null;
       }
       startTimeRef.current = Date.now();
@@ -159,10 +176,9 @@ export default function FocusMode({ user }: FocusModeProps) {
 
     setTimerState('idle');
     if (intervalRef.current) clearInterval(intervalRef.current);
-    stopCamera();
 
     try {
-      await endSession(sessionId, status, totalDistractedAccumRef.current, elapsed);
+      await endSession(sessionId, status, totalDistractedAccumRef.current, elapsed, breakSecondsRef.current);
     } catch (err) {
       console.error('Failed to end session:', err);
     }
@@ -173,12 +189,13 @@ export default function FocusMode({ user }: FocusModeProps) {
     pausedAtRef.current = 0;
     pauseStartRef.current = null;
     startTimeRef.current = null;
+    breakSecondsRef.current = 0;
     totalDistractedAccumRef.current = 0;
 
     if (status === 'completed') {
       setToast({ message: '🔥 Session complete! You actually did it.', type: 'success' });
     }
-  }, [sessionId, elapsed, stopCamera]);
+  }, [sessionId, elapsed]);
 
   const handleDismissWarning = () => {
     setWarningVisible(false);
@@ -196,20 +213,18 @@ export default function FocusMode({ user }: FocusModeProps) {
     return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Circular progress - fills up over 60 minutes (one full session goal)
-  // When distracted, the ring shows distraction progress instead
   const maxSeconds = 60 * 60;
-  const distractionMax = 30 * 60; // 30min distracted = full ring in distraction mode
+  const distractionMax = 30 * 60;
   const progress = isDistracted
     ? Math.min(distractedSeconds / distractionMax, 1)
     : Math.min(elapsed / maxSeconds, 1);
   const circumference = 2 * Math.PI * 140;
   const strokeDashoffset = circumference * (1 - progress);
 
-  // Background color shifts from dark to danger red based on distraction time, not focus time
-  const dangerLevel = Math.min(totalDistractedSeconds / (30 * 60), 1); // 30min distracted = max danger
+  // Background color shifts from dark to danger red based on distraction time
+  const dangerLevel = Math.min(totalDistractedSeconds / (30 * 60), 1);
 
-  // Ring colour: red when distracted, green→orange→red when focused based on time
+  // Ring colour: red when distracted, green→orange→red when focused
   const ringColour = isDistracted
     ? '#ff3333'
     : progress > 0.8 ? '#ff3333' : progress > 0.5 ? '#ff6b35' : '#00ff88';
@@ -314,17 +329,17 @@ export default function FocusMode({ user }: FocusModeProps) {
         )}
       </div>
 
-      {/* Camera feed — visible once session starts */}
+      {/* Camera feed — always mounted once session starts so stream attaches correctly */}
       {timerState !== 'idle' && (
         <div className="camera-feed-wrapper">
           <video
-            ref={displayVideoRef}
+            ref={setDisplayVideoRef}
             className="camera-feed-video"
             autoPlay
             playsInline
             muted
           />
-          <div className={`camera-feed-status ${isDistracted ? 'feed-status-bad' : cameraReady ? 'feed-status-ok' : 'feed-status-loading'}`}>
+          <div className={`camera-feed-status ${isDistracted ? 'feed-status-bad' : cameraReady ? 'feed-status-ok' : cameraError ? 'feed-status-err' : 'feed-status-loading'}`}>
             {!cameraReady && !cameraError && '📷 Starting camera...'}
             {cameraError && `⚠ ${cameraError}`}
             {cameraReady && !isDistracted && '✅ Focused'}

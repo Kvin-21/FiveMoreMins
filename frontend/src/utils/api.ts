@@ -71,12 +71,12 @@ export async function startSession() {
   return handleResponse<{ session: Session }>(res);
 }
 
-export async function endSession(sessionId: number, status: string, longestAway: number, duration: number) {
+export async function endSession(sessionId: number, status: string, longestAway: number, duration: number, breakSeconds: number = 0) {
   const res = await fetch(`${BASE_URL}/session/end`, {
     method: 'POST',
     headers: mutatingHeaders(),
     credentials: 'include',
-    body: JSON.stringify({ sessionId, status, longestAway, duration }),
+    body: JSON.stringify({ sessionId, status, longestAway, duration, breakSeconds }),
   });
   return handleResponse<{ success: boolean }>(res);
 }

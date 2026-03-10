@@ -53,6 +53,13 @@ function initDb() {
     );
   `);
 
+  // Add break_seconds column if it doesn't exist yet (safe migration for existing DBs)
+  try {
+    db.exec(`ALTER TABLE sessions ADD COLUMN break_seconds INTEGER DEFAULT 0`);
+  } catch {
+    // Column already exists, that's fine
+  }
+
   console.log('📦 Database ready (tables created if they didn\'t exist)');
 }
 

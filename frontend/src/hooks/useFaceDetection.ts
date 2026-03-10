@@ -21,6 +21,7 @@ interface FaceDetectionState {
   totalDistractedSeconds: number;
   cameraError: string | null;
   cameraReady: boolean;
+  stream: MediaStream | null;
 }
 
 // Custom hook for webcam-based distraction detection using MediaPipe Face Mesh
@@ -32,10 +33,11 @@ export function useFaceDetection(isSessionActive: boolean) {
     totalDistractedSeconds: 0,
     cameraError: null,
     cameraReady: false,
+    stream: null,
   });
 
-  // Exposed so FocusMode can attach the feed to a <video> element
-  const videoRef = useRef<HTMLVideoElement | null>(null);
+  // Internal hidden video that MediaPipe Camera utility uses — never shown to user
+  const internalVideoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const faceMeshRef = useRef<any>(null);
   const cameraRef = useRef<any>(null);
@@ -61,6 +63,13 @@ export function useFaceDetection(isSessionActive: boolean) {
       streamRef.current.getTracks().forEach(t => t.stop());
       streamRef.current = null;
     }
+    if (internalVideoRef.current) {
+      internalVideoRef.current.srcObject = null;
+      if (internalVideoRef.current.parentNode) {
+        internalVideoRef.current.parentNode.removeChild(internalVideoRef.current);
+      }
+      internalVideoRef.current = null;
+    }
     if (intervalRef.current) {
       clearInterval(intervalRef.current);
       intervalRef.current = null;
@@ -69,13 +78,10 @@ export function useFaceDetection(isSessionActive: boolean) {
       clearTimeout(confirmTimerRef.current);
       confirmTimerRef.current = null;
     }
-    // Detach stream from any video element that was handed out
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
+    setState(prev => ({ ...prev, stream: null, cameraReady: false }));
   }, []);
 
-  const startCamera = useCallback(async (displayVideoEl?: HTMLVideoElement | null) => {
+  const startCamera = useCallback(async () => {
     try {
       // Dynamically load MediaPipe — runs fully client-side, no server needed
       const [{ FaceMesh }, { Camera }] = await Promise.all([
@@ -83,23 +89,22 @@ export function useFaceDetection(isSessionActive: boolean) {
         import('@mediapipe/camera_utils'),
       ]);
 
-      // If a visible video element was passed in, use it so the feed is shown on screen
-      let video: HTMLVideoElement;
-      if (displayVideoEl) {
-        video = displayVideoEl;
-      } else {
-        video = document.createElement('video');
-        video.style.display = 'none';
-        video.setAttribute('playsinline', 'true');
-        document.body.appendChild(video);
-      }
-      videoRef.current = video;
+      // Create a hidden video element purely for MediaPipe to consume
+      const hiddenVideo = document.createElement('video');
+      hiddenVideo.style.cssText = 'position:fixed;top:-9999px;left:-9999px;width:1px;height:1px;';
+      hiddenVideo.setAttribute('playsinline', 'true');
+      hiddenVideo.muted = true;
+      document.body.appendChild(hiddenVideo);
+      internalVideoRef.current = hiddenVideo;
 
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { facingMode: 'user', width: 320, height: 240 },
       });
       streamRef.current = stream;
-      video.srcObject = stream;
+      hiddenVideo.srcObject = stream;
+
+      // Expose the raw stream so FocusMode can attach it to a visible <video> separately
+      setState(prev => ({ ...prev, stream }));
 
       const faceMesh = new FaceMesh({
         locateFile: (file: string) =>
@@ -211,10 +216,10 @@ export function useFaceDetection(isSessionActive: boolean) {
         }
       }, 1000);
 
-      const camera = new Camera(video, {
+      const camera = new Camera(hiddenVideo, {
         onFrame: async () => {
           if (faceMeshRef.current) {
-            await faceMeshRef.current.send({ image: video });
+            await faceMeshRef.current.send({ image: hiddenVideo });
           }
         },
         width: 320,
@@ -249,12 +254,14 @@ export function useFaceDetection(isSessionActive: boolean) {
         totalDistractedSeconds: 0,
         cameraError: null,
         cameraReady: false,
+        stream: null,
       });
       return;
     }
 
-    // Don't auto-start here — FocusMode calls startCamera directly with the video element
-  }, [isSessionActive, stopCamera]);
+    startCamera();
+    return () => { stopCamera(); };
+  }, [isSessionActive, startCamera, stopCamera]);
 
   const resetDistracted = useCallback(() => {
     // If currently distracted, move the base forward so distractedSeconds restarts from 0
@@ -264,5 +271,5 @@ export function useFaceDetection(isSessionActive: boolean) {
     setState(prev => ({ ...prev, distractedSeconds: 0 }));
   }, []);
 
-  return { ...state, resetDistracted, totalDistractedSeconds: totalDistractedRef.current, startCamera, stopCamera, videoRef };
+  return { ...state, resetDistracted, totalDistractedSeconds: totalDistractedRef.current };
 }
