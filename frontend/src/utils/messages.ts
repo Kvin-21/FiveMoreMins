@@ -35,11 +35,25 @@ export function getRandomMessage(tier: 'mild' | 'medium' | 'aggressive'): string
 }
 
 export function getTier(distractedSeconds: number): 'mild' | 'medium' | 'aggressive' | null {
-  // ─── Change these to adjust warning thresholds ───────────────────────────────
+  // ─── Change these to adjust warning thresholds ───   ───────────────────────────
   // These must match MILD_SECONDS / MEDIUM_SECONDS / PENALTY_SECONDS in useFaceDetection.ts
-  if (distractedSeconds >= 6 * 60) return 'aggressive'; // 30 min
-  if (distractedSeconds >= 3 * 60) return 'medium';     // 15 min
-  if (distractedSeconds >= 2 * 60) return 'mild';        // 5 min
+  if (distractedSeconds >= 0.7 * 60) return 'aggressive'; // 30 min
+  if (distractedSeconds >= 0.5 * 60) return 'medium';     // 15 min
+  if (distractedSeconds >= 0.3 * 60) return 'mild';        // 5 min
   // ─────────────────────────────────────────────────────────────────────────────
+  return null;
+}
+
+// Returns the highest tier that should be shown given total distracted seconds,
+// but only if it hasn't been shown yet this session.
+// shownTiers is the set of tiers already triggered.
+export function getNextTier(
+  totalDistractedSeconds: number,
+  shownTiers: Set<string>
+): 'mild' | 'medium' | 'aggressive' | null {
+  // Check from highest to lowest so we don't skip tiers when jumping fast
+  if (totalDistractedSeconds >= 0.7 * 60 && !shownTiers.has('aggressive')) return 'aggressive';
+  if (totalDistractedSeconds >= 0.5 * 60 && !shownTiers.has('medium')) return 'medium';
+  if (totalDistractedSeconds >= 0.3 * 60 && !shownTiers.has('mild')) return 'mild';
   return null;
 }

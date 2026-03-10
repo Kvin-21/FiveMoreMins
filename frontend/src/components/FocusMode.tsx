@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useFaceDetection } from '../hooks/useFaceDetection';
 import { startSession, endSession, triggerPenalty } from '../utils/api';
-import { getRandomMessage, getTier } from '../utils/messages';
+import { getRandomMessage, getNextTier } from '../utils/messages';
 import WarningModal from './WarningModal';
 import Toast from './Toast';
 
@@ -42,14 +42,17 @@ export default function FocusMode({ user }: FocusModeProps) {
   const pausedAtRef = useRef<number>(0);
   const pauseStartRef = useRef<number | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const totalDistractedAccumRef = useRef<number>(0);
   const breakSecondsRef = useRef<number>(0);
+  const elapsedRef = useRef<number>(0);
+
+  // Track which warning tiers have already fired this session — each only shows once
+  const shownTiersRef = useRef<Set<string>>(new Set());
 
   // Ref for the visible camera feed element — stream attaches here
   const displayVideoRef = useRef<HTMLVideoElement | null>(null);
 
-  // Camera is active whenever we have a session (running OR paused) so it doesn't restart on pause
   const sessionActive = timerState === 'running' || timerState === 'paused';
+  const isPaused = timerState === 'paused';
 
   const {
     isDistracted,
@@ -59,7 +62,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     cameraReady,
     resetDistracted,
     stream,
-  } = useFaceDetection(sessionActive);
+  } = useFaceDetection(sessionActive, isPaused);
 
   // Attach the camera stream to the visible video element whenever it changes
   useEffect(() => {
@@ -76,7 +79,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     }
   }, [stream]);
 
-  // Update elapsed time every second while running
+  // Update elapsed time every second while running — using timestamps for accuracy
   useEffect(() => {
     if (timerState !== 'running') {
       if (intervalRef.current) clearInterval(intervalRef.current);
@@ -86,6 +89,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     intervalRef.current = setInterval(() => {
       if (startTimeRef.current) {
         const totalElapsed = Math.floor((Date.now() - startTimeRef.current) / 1000) + pausedAtRef.current;
+        elapsedRef.current = totalElapsed;
         setElapsed(totalElapsed);
       }
     }, 1000);
@@ -95,40 +99,46 @@ export default function FocusMode({ user }: FocusModeProps) {
     };
   }, [timerState]);
 
-  // Sync total distracted seconds from hook into ref for use in session end
+  // React to face detection — check against TOTAL distracted seconds, not just current window.
+  // Each tier fires exactly once per session regardless of how many distraction events happen.
   useEffect(() => {
-    totalDistractedAccumRef.current = totalDistractedSeconds;
-  }, [totalDistractedSeconds]);
+    if (timerState !== 'running') return;
 
-  // React to face detection distraction events
-  useEffect(() => {
-    if (timerState !== 'running' || distractedSeconds === 0) return;
+    // totalDistractedSeconds accumulates across all distraction windows.
+    // Add the currently-running window (distractedSeconds) for the real-time total.
+    const runningTotal = totalDistractedSeconds + (isDistracted ? distractedSeconds : 0);
+    if (runningTotal === 0) return;
 
-    const tier = getTier(distractedSeconds);
-    if (!tier) return;
-
-    // Don't trigger another warning while one is already showing
+    // Don't interrupt while a warning modal is already open
     if (warningVisible) return;
 
-    // Only trigger penalty once per session
-    const shouldTriggerPenalty = tier === 'aggressive' && !penaltyTriggered;
+    const nextTier = getNextTier(runningTotal, shownTiersRef.current);
+    if (!nextTier) return;
 
-    if (shouldTriggerPenalty) {
+    // Mark this tier as shown so it never fires again this session
+    shownTiersRef.current.add(nextTier);
+
+    // Only trigger the penalty email for the aggressive tier
+    if (nextTier === 'aggressive' && !penaltyTriggered) {
       setPenaltyTriggered(true);
       setPenaltySent(false);
 
       if (sessionId) {
-        triggerPenalty(sessionId, Math.floor(distractedSeconds / 60))
+        triggerPenalty(sessionId, Math.floor(runningTotal / 60))
           .then(() => setPenaltySent(true))
-          .catch(() => setPenaltySent(true));
+          .catch((err) => {
+            console.error('Penalty email failed:', err);
+            // Still show the modal even if email failed, but flag it
+            setPenaltySent(false);
+          });
       }
     }
 
-    setWarningTier(tier);
-    setWarningMessage(getRandomMessage(tier));
-    setWarningMinutes(Math.floor(distractedSeconds / 60));
+    setWarningTier(nextTier);
+    setWarningMessage(getRandomMessage(nextTier));
+    setWarningMinutes(Math.floor(runningTotal / 60));
     setWarningVisible(true);
-  }, [distractedSeconds, timerState, warningVisible, penaltyTriggered, sessionId]);
+  }, [totalDistractedSeconds, distractedSeconds, isDistracted, timerState, warningVisible, penaltyTriggered, sessionId]);
 
   const handleStart = async () => {
     if (!user) {
@@ -142,11 +152,13 @@ export default function FocusMode({ user }: FocusModeProps) {
       startTimeRef.current = Date.now();
       pausedAtRef.current = 0;
       breakSecondsRef.current = 0;
-      totalDistractedAccumRef.current = 0;
+      elapsedRef.current = 0;
+      shownTiersRef.current = new Set();
       setElapsed(0);
       setBreakSeconds(0);
       setTimerState('running');
       setPenaltyTriggered(false);
+      setPenaltySent(false);
     } catch (err) {
       setToast({ message: 'Failed to start session. Is the backend running?', type: 'error' });
     }
@@ -154,7 +166,7 @@ export default function FocusMode({ user }: FocusModeProps) {
 
   const handlePause = () => {
     if (timerState === 'running') {
-      pausedAtRef.current = elapsed;
+      pausedAtRef.current = elapsedRef.current;
       pauseStartRef.current = Date.now();
       startTimeRef.current = null;
       setTimerState('paused');
@@ -178,7 +190,7 @@ export default function FocusMode({ user }: FocusModeProps) {
     if (intervalRef.current) clearInterval(intervalRef.current);
 
     try {
-      await endSession(sessionId, status, totalDistractedAccumRef.current, elapsed, breakSecondsRef.current);
+      await endSession(sessionId, status, totalDistractedSeconds, elapsedRef.current, breakSecondsRef.current);
     } catch (err) {
       console.error('Failed to end session:', err);
     }
@@ -190,16 +202,18 @@ export default function FocusMode({ user }: FocusModeProps) {
     pauseStartRef.current = null;
     startTimeRef.current = null;
     breakSecondsRef.current = 0;
-    totalDistractedAccumRef.current = 0;
+    elapsedRef.current = 0;
+    shownTiersRef.current = new Set();
 
     if (status === 'completed') {
       setToast({ message: '🔥 Session complete! You actually did it.', type: 'success' });
     }
-  }, [sessionId, elapsed]);
+  }, [sessionId, totalDistractedSeconds]);
 
   const handleDismissWarning = () => {
     setWarningVisible(false);
-    resetDistracted();
+    // Don't call resetDistracted here — we want the total to keep accumulating correctly.
+    // The per-window distractedSeconds resets naturally when focus is detected again.
   };
 
   // Format seconds as mm:ss or hh:mm:ss
@@ -228,6 +242,9 @@ export default function FocusMode({ user }: FocusModeProps) {
   const ringColour = isDistracted
     ? '#ff3333'
     : progress > 0.8 ? '#ff3333' : progress > 0.5 ? '#ff6b35' : '#00ff88';
+
+  // Focused time = elapsed minus total distracted, never negative
+  const focusedTime = Math.max(0, elapsed - totalDistractedSeconds);
 
   return (
     <div
@@ -320,7 +337,7 @@ export default function FocusMode({ user }: FocusModeProps) {
           <div className="focus-side-stat focus-side-right">
             <span className="side-stat-label">FOCUSED</span>
             <span className="side-stat-value side-stat-green">
-              {formatTime(Math.max(0, elapsed - totalDistractedSeconds))}
+              {formatTime(focusedTime)}
             </span>
             {totalDistractedSeconds > 0 && (
               <span className="side-stat-sub side-stat-red">📵 {formatTime(totalDistractedSeconds)} off</span>
@@ -342,7 +359,7 @@ export default function FocusMode({ user }: FocusModeProps) {
           <div className={`camera-feed-status ${isDistracted ? 'feed-status-bad' : cameraReady ? 'feed-status-ok' : cameraError ? 'feed-status-err' : 'feed-status-loading'}`}>
             {!cameraReady && !cameraError && '📷 Starting camera...'}
             {cameraError && `⚠ ${cameraError}`}
-            {cameraReady && !isDistracted && '✅ Focused'}
+            {cameraReady && !isDistracted && (timerState === 'paused' ? '⏸ Paused' : '✅ Focused')}
             {cameraReady && isDistracted && '📵 Procrastinating'}
           </div>
         </div>

@@ -5,15 +5,21 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 // MILD_SECONDS   → seconds of detected distraction before the first warning
 // MEDIUM_SECONDS → seconds before the second (angrier) warning
 // PENALTY_SECONDS→ seconds before the blackmail email fires
-export const MILD_SECONDS = 2 * 60;    // 5 minutes
-export const MEDIUM_SECONDS = 3 * 60; // 15 minutes
-export const PENALTY_SECONDS = 6 * 60; // 30 minutes
+export const MILD_SECONDS = 0.3 * 60;    // 5 minutes
+export const MEDIUM_SECONDS = 0.5 * 60; // 15 minutes
+export const PENALTY_SECONDS = 0.7 * 60; // 30 minutes
 
 // Head-tilt threshold: chin.y - nose.y > this value means looking down at phone
+// Only used as fallback when no personal model is trained
 const HEAD_TILT_THRESHOLD = 0.14;
 // How long (ms) a distraction must be held before we count it
 const CONFIRM_DELAY_MS = 3000;
 // ──────────────────────────────────────────────────────────────────────────────
+
+interface PersonalModel {
+  focusedMean: number[];
+  distractedMean: number[];
+}
 
 interface FaceDetectionState {
   isDistracted: boolean;
@@ -24,9 +30,97 @@ interface FaceDetectionState {
   stream: MediaStream | null;
 }
 
+// Extract the same 10-feature vector used in the training UI
+function extractFeatures(landmarks: any[]): number[] {
+  const nose = landmarks[1];
+  const chin = landmarks[152];
+  const leftEyeOuter = landmarks[33];
+  const rightEyeOuter = landmarks[263];
+  const foreheadTop = landmarks[10];
+
+  const headTilt = chin.y - nose.y;
+  const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
+  const faceHeightRatio = chin.y - foreheadTop.y;
+  const eyeSpread = Math.abs(rightEyeOuter.x - leftEyeOuter.x);
+  const noseToEyeMid = nose.y - eyeMidY;
+  const chinZ = chin.z;
+  const noseZ = nose.z;
+  const headRoll = leftEyeOuter.y - rightEyeOuter.y;
+
+  let leftGazeDelta = 0;
+  let rightGazeDelta = 0;
+  if (landmarks[468] && landmarks[473]) {
+    const leftIris = landmarks[468];
+    const rightIris = landmarks[473];
+    const leftUpperLid = landmarks[159];
+    const leftLowerLid = landmarks[145];
+    const rightUpperLid = landmarks[386];
+    const rightLowerLid = landmarks[374];
+    const leftEyeCentreY = (leftUpperLid.y + leftLowerLid.y) / 2;
+    const rightEyeCentreY = (rightUpperLid.y + rightLowerLid.y) / 2;
+    leftGazeDelta = leftIris.y - leftEyeCentreY;
+    rightGazeDelta = rightIris.y - rightEyeCentreY;
+  }
+
+  return [
+    headTilt,
+    eyeMidY,
+    faceHeightRatio,
+    eyeSpread,
+    noseToEyeMid,
+    chinZ,
+    noseZ,
+    headRoll,
+    leftGazeDelta,
+    rightGazeDelta,
+  ];
+}
+
+// Euclidean distance between two equal-length vectors
+function euclidean(a: number[], b: number[]): number {
+  return Math.sqrt(a.reduce((sum, x, i) => sum + (x - b[i]) ** 2, 0));
+}
+
+// Nearest-centroid classification using trained personal model
+function classifyWithModel(features: number[], model: PersonalModel): boolean {
+  const dFocused = euclidean(features, model.focusedMean);
+  const dDistracted = euclidean(features, model.distractedMean);
+  return dDistracted < dFocused;
+}
+
+// Fallback heuristic when no personal model exists
+function classifyHeuristic(landmarks: any[]): boolean {
+  const nose = landmarks[1];
+  const chin = landmarks[152];
+  const leftEyeOuter = landmarks[33];
+  const rightEyeOuter = landmarks[263];
+
+  const headTilt = chin.y - nose.y;
+  const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
+
+  let gazeDown = false;
+  if (landmarks[468] && landmarks[473]) {
+    const leftIris = landmarks[468];
+    const rightIris = landmarks[473];
+    const leftUpperLid = landmarks[159];
+    const leftLowerLid = landmarks[145];
+    const rightUpperLid = landmarks[386];
+    const rightLowerLid = landmarks[374];
+    const leftEyeCentreY = (leftUpperLid.y + leftLowerLid.y) / 2;
+    const rightEyeCentreY = (rightUpperLid.y + rightLowerLid.y) / 2;
+    gazeDown = (leftIris.y > leftEyeCentreY + 0.01) && (rightIris.y > rightEyeCentreY + 0.01);
+  }
+
+  // Combine signals: strong head tilt alone is enough, or mild tilt + gaze down
+  return (
+    headTilt > HEAD_TILT_THRESHOLD ||
+    (headTilt > HEAD_TILT_THRESHOLD * 0.7 && gazeDown && eyeMidY < 0.45)
+  );
+}
+
 // Custom hook for webcam-based distraction detection using MediaPipe Face Mesh
 // Replaces the old tab-visibility approach — now we actually watch you
-export function useFaceDetection(isSessionActive: boolean) {
+export function useFaceDetection(isSessionActive: boolean, isPaused: boolean) {
   const [state, setState] = useState<FaceDetectionState>({
     isDistracted: false,
     distractedSeconds: 0,
@@ -48,11 +142,50 @@ export function useFaceDetection(isSessionActive: boolean) {
   const totalDistractedRef = useRef(0);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const resetBaseRef = useRef<number | null>(null);
-  const isActiveRef = useRef(isSessionActive);
+  const isPausedRef = useRef(isPaused);
+  const personalModelRef = useRef<PersonalModel | null>(null);
 
   useEffect(() => {
-    isActiveRef.current = isSessionActive;
-  }, [isSessionActive]);
+    isPausedRef.current = isPaused;
+
+    if (isPaused) {
+      // Freeze distraction state on pause — don't accumulate while paused
+      if (confirmTimerRef.current) {
+        clearTimeout(confirmTimerRef.current);
+        confirmTimerRef.current = null;
+      }
+      if (intervalRef.current) {
+        clearInterval(intervalRef.current);
+        intervalRef.current = null;
+      }
+      // If we were mid-distraction, bank those seconds
+      if (isConfirmedDistractedRef.current && distractedStartRef.current) {
+        const awayMs = Date.now() - (resetBaseRef.current ?? distractedStartRef.current);
+        const awaySeconds = Math.floor(awayMs / 1000);
+        totalDistractedRef.current += awaySeconds;
+        isConfirmedDistractedRef.current = false;
+        distractedStartRef.current = null;
+        resetBaseRef.current = null;
+        setState(prev => ({
+          ...prev,
+          isDistracted: false,
+          distractedSeconds: 0,
+          totalDistractedSeconds: totalDistractedRef.current,
+        }));
+      }
+    } else if (isSessionActive) {
+      // Resuming from pause — restart the distraction second counter
+      if (!intervalRef.current) {
+        intervalRef.current = setInterval(() => {
+          if (isConfirmedDistractedRef.current && distractedStartRef.current) {
+            const base = resetBaseRef.current ?? distractedStartRef.current;
+            const seconds = Math.floor((Date.now() - base) / 1000);
+            setState(prev => ({ ...prev, distractedSeconds: seconds }));
+          }
+        }, 1000);
+      }
+    }
+  }, [isPaused, isSessionActive]);
 
   const stopCamera = useCallback(() => {
     if (cameraRef.current) {
@@ -82,6 +215,21 @@ export function useFaceDetection(isSessionActive: boolean) {
   }, []);
 
   const startCamera = useCallback(async () => {
+    // Try to load personal trained model from backend first
+    try {
+      const resp = await fetch('http://localhost:3001/train/model');
+      const modelData = await resp.json();
+      if (modelData.exists && modelData.focusedMean && modelData.distractedMean) {
+        personalModelRef.current = { focusedMean: modelData.focusedMean, distractedMean: modelData.distractedMean };
+        console.log('✅ Personal model loaded — using trained classifier');
+      } else {
+        personalModelRef.current = null;
+        console.log('ℹ No personal model found — using heuristic classifier. Visit /train to train one.');
+      }
+    } catch {
+      personalModelRef.current = null;
+    }
+
     try {
       // Dynamically load MediaPipe — runs fully client-side, no server needed
       const [{ FaceMesh }, { Camera }] = await Promise.all([
@@ -119,7 +267,8 @@ export function useFaceDetection(isSessionActive: boolean) {
       });
 
       faceMesh.onResults((results: any) => {
-        if (!isActiveRef.current) return;
+        // Don't do anything while paused
+        if (isPausedRef.current) return;
 
         // No face in frame — treat as distracted (walked away / looking down hard)
         const noFace = !results.multiFaceLandmarks || results.multiFaceLandmarks.length === 0;
@@ -129,41 +278,14 @@ export function useFaceDetection(isSessionActive: boolean) {
         if (!noFace) {
           const landmarks = results.multiFaceLandmarks[0];
 
-          // Landmark indices: nose tip = 1, chin = 152, left eye outer = 33, right eye outer = 263
-          const nose = landmarks[1];
-          const chin = landmarks[152];
-          const leftEyeOuter = landmarks[33];
-          const rightEyeOuter = landmarks[263];
-
-          // Head pitch: if chin is much lower than nose in normalised coords, head is tilted down
-          const headTilt = chin.y - nose.y;
-
-          // Eye level in frame: if eyes are near the top of the frame, head is tilted down
-          const eyeMidY = (leftEyeOuter.y + rightEyeOuter.y) / 2;
-
-          // Gaze direction: compare iris position (landmarks 468/473 with refineLandmarks)
-          // If both irises are pointing downward relative to the eye centre, likely looking down
-          let gazeDown = false;
-          if (landmarks[468] && landmarks[473]) {
-            const leftIris = landmarks[468];
-            const rightIris = landmarks[473];
-            const leftUpperLid = landmarks[159];
-            const leftLowerLid = landmarks[145];
-            const rightUpperLid = landmarks[386];
-            const rightLowerLid = landmarks[374];
-
-            const leftEyeCentreY = (leftUpperLid.y + leftLowerLid.y) / 2;
-            const rightEyeCentreY = (rightUpperLid.y + rightLowerLid.y) / 2;
-
-            const leftGazeDown = leftIris.y > leftEyeCentreY + 0.01;
-            const rightGazeDown = rightIris.y > rightEyeCentreY + 0.01;
-            gazeDown = leftGazeDown && rightGazeDown;
+          if (personalModelRef.current) {
+            // Use trained personal model — nearest-centroid classification
+            const features = extractFeatures(landmarks);
+            lookingAtPhone = classifyWithModel(features, personalModelRef.current);
+          } else {
+            // Fallback heuristic when no personal model exists
+            lookingAtPhone = classifyHeuristic(landmarks);
           }
-
-          // Combine signals: strong head tilt alone is enough, or mild tilt + gaze down
-          lookingAtPhone =
-            headTilt > HEAD_TILT_THRESHOLD ||
-            (headTilt > HEAD_TILT_THRESHOLD * 0.7 && gazeDown && eyeMidY < 0.45);
         }
 
         const isDistracted = noFace || lookingAtPhone;
@@ -209,6 +331,7 @@ export function useFaceDetection(isSessionActive: boolean) {
 
       // Update distractedSeconds counter while distracted
       intervalRef.current = setInterval(() => {
+        if (isPausedRef.current) return;
         if (isConfirmedDistractedRef.current && distractedStartRef.current) {
           const base = resetBaseRef.current ?? distractedStartRef.current;
           const seconds = Math.floor((Date.now() - base) / 1000);
@@ -271,5 +394,6 @@ export function useFaceDetection(isSessionActive: boolean) {
     setState(prev => ({ ...prev, distractedSeconds: 0 }));
   }, []);
 
-  return { ...state, resetDistracted, totalDistractedSeconds: totalDistractedRef.current };
+  // Return totalDistractedSeconds from state (reactive) not ref (stale at render)
+  return { ...state, resetDistracted };
 }

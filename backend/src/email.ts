@@ -66,7 +66,10 @@ async function sendViaNodemailer(data: PenaltyEmailData): Promise<void> {
     ];
   }
 
-  await transporter.sendMail(mailOptions);
+  // Verify connection before sending so errors surface clearly in the console
+  await transporter.verify();
+  const info = await transporter.sendMail(mailOptions);
+  console.log('✅ Email sent successfully. Message ID:', info.messageId);
 }
 
 // Send via EmailJS REST API (no SMTP needed, works from server side with private key)
@@ -115,19 +118,25 @@ async function sendViaEmailJS(data: PenaltyEmailData): Promise<void> {
   });
 }
 
-// Main export - tries EmailJS first, falls back to nodemailer
+// Main export - tries nodemailer first if EMAIL_METHOD=nodemailer, otherwise EmailJS
 export async function sendPenaltyEmail(data: PenaltyEmailData): Promise<void> {
   const method = process.env.EMAIL_METHOD;
 
-  if (method === 'nodemailer' || process.env.GMAIL_USER) {
-    console.log('📧 Sending penalty email via nodemailer...');
+  console.log(`📧 sendPenaltyEmail called — method: ${method}, to: ${data.toEmail}, from: ${data.fromEmail}, minutes: ${data.awayMinutes}`);
+  console.log(`   GMAIL_USER set: ${!!process.env.GMAIL_USER}, GMAIL_APP_PASSWORD set: ${!!process.env.GMAIL_APP_PASSWORD}`);
+
+  if (method === 'nodemailer') {
+    if (!process.env.GMAIL_USER || !process.env.GMAIL_APP_PASSWORD) {
+      throw new Error('EMAIL_METHOD=nodemailer but GMAIL_USER or GMAIL_APP_PASSWORD is not set in .env');
+    }
+    console.log('📧 Sending penalty email via nodemailer (Gmail)...');
     await sendViaNodemailer(data);
-  } else if (process.env.EMAILJS_SERVICE_ID) {
+  } else if (method === 'emailjs' || process.env.EMAILJS_SERVICE_ID) {
     console.log('📧 Sending penalty email via EmailJS...');
     await sendViaEmailJS(data);
   } else {
     // No email configured - log it and pretend it worked (dev mode)
     console.warn('⚠️ No email service configured. Would have sent to:', data.toEmail);
-    console.warn('   Set up EmailJS or Gmail in .env to actually send emails');
+    console.warn('   Set EMAIL_METHOD=nodemailer and GMAIL_USER/GMAIL_APP_PASSWORD in .env');
   }
 }

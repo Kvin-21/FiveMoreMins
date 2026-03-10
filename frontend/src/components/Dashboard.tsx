@@ -37,8 +37,10 @@ export default function Dashboard({ user }: DashboardProps) {
   };
 
   // Singapore time (UTC+8)
+  // SQLite stores CURRENT_TIMESTAMP without a timezone suffix, so we must treat it as UTC explicitly
   const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('en-SG', {
+    const utcStr = dateStr.includes('T') ? dateStr : dateStr.replace(' ', 'T') + 'Z';
+    return new Date(utcStr).toLocaleDateString('en-SG', {
       timeZone: 'Asia/Singapore',
       month: 'short',
       day: 'numeric',

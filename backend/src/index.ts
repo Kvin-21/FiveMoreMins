@@ -17,6 +17,7 @@ import uploadRoutes from './routes/upload';
 import partnerRoutes from './routes/partner';
 import penaltyRoutes from './routes/penalty';
 import dashboardRoutes from './routes/dashboard';
+import trainRoutes from './routes/train';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -75,6 +76,9 @@ app.use('/api/partner', partnerRoutes);
 app.use('/api/penalty', penaltyLimiter, penaltyRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 
+// Training endpoint - secret-ish, no auth needed since it's localhost only
+app.use('/train', trainRoutes);
+
 // Health check
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'alive', message: 'FiveMoreMins backend is running ⚡' });
@@ -83,6 +87,7 @@ app.get('/api/health', (_req, res) => {
 app.listen(PORT, () => {
   console.log(`\n🔥 FiveMoreMins backend running on http://localhost:${PORT}`);
   console.log(`   Upload dir: ${path.join(__dirname, '..', 'uploads')}`);
+  console.log(`   Train UI:   http://localhost:${PORT}/train`);
   console.log(`   Environment: ${process.env.NODE_ENV || 'development'}\n`);
 });
 
